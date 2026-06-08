@@ -28,6 +28,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>  // INT_MIN — fuzzy scorer "no match" sentinel
 
 #include "PatternLibrary.h"
 #include "PatternStorage.h"
@@ -45,7 +46,7 @@ static constexpr uint16_t kPanelHeight = 272;
 // Hardcoded landscape rotation. If touch and visuals are mirrored, swap to
 // ROTATION_NORMAL or ROTATION_LEFT / ROTATION_RIGHT.
 static constexpr auto    kTouchRotation = ROTATION_INVERTED;
-static constexpr uint8_t  kDisplayRotation = 1;
+static constexpr uint8_t  kDisplayRotation = 0;
 static constexpr uint16_t kTouchWidth = kPanelWidth;
 static constexpr uint16_t kTouchHeight = kPanelHeight;
 static constexpr bool kArcReverse = false;
@@ -100,11 +101,16 @@ static uint8_t s_visible_invert_mask  = 0x00;
 // selection (incl. section-marker offsets we skip via re-selection
 // logic) to a PatternLibrary::builtinByIndex(...) index. We hold up to
 // 128 entries to leave room for user patterns later.
-#define UI_PATTERN_DD_CAP 128
+// 128 builtins + 4 category headers = 132 possible rows; +4 slack.
+#define UI_PATTERN_DD_CAP 136
 static int16_t s_pattern_dd_to_builtin[UI_PATTERN_DD_CAP];
 static uint8_t s_pattern_dd_entry_count = 0;
 static lv_obj_t* ta_pattern_filter = nullptr;
 static char s_pattern_filter[32] = {0};
+
+// On-screen keyboard for the filter / DSL textareas. Lazily created on
+// lv_layer_top() the first time a textarea is focused (see ui_get_keyboard).
+static lv_obj_t* kb_filter = nullptr;
 
 // M4.5: Sweep + compression panels (modals).
 static lv_obj_t* overlay_sweep = nullptr;
@@ -228,6 +234,13 @@ static void on_custom_cancel(lv_event_t* e);
 static void rebuild_pattern_dropdown_options(const char* filter);
 static void on_pattern_filter_changed(lv_event_t* e);
 static const char* category_for_pattern(const PatternRef* p);
+
+// On-screen keyboard lifecycle (R3) — shared by the filter + DSL textareas.
+static lv_obj_t* ui_get_keyboard();
+static void kb_show_for(lv_obj_t* ta);
+static void kb_hide();
+static void on_ta_focused(lv_event_t* e);
+static void on_ta_defocused(lv_event_t* e);
 
 static void open_sweep_panel(lv_event_t* e);
 static void close_sweep_panel(lv_event_t* e);
@@ -686,7 +699,9 @@ static void create_main_screen() {
   lv_obj_t* list = lv_dropdown_get_list(dd_patterns);
   if (list) {
     lv_obj_add_style(list, &style_dropdown, LV_PART_MAIN);
-    lv_obj_set_height(list, 200);
+    // Capped so the open list (top ~y 64) stays partially visible above the
+    // 116 px on-screen keyboard that rises from the bottom when filtering.
+    lv_obj_set_height(list, 120);
   }
   lv_obj_add_event_cb(dd_patterns, on_pattern_changed, LV_EVENT_VALUE_CHANGED, NULL);
   lv_obj_add_event_cb(dd_patterns, on_pattern_open, LV_EVENT_CLICKED, NULL);
@@ -699,6 +714,13 @@ static void create_main_screen() {
   lv_obj_set_size(ta_pattern_filter, 212, 28);
   lv_obj_add_event_cb(ta_pattern_filter, on_pattern_filter_changed,
                       LV_EVENT_VALUE_CHANGED, NULL);
+  // On-screen keyboard: raise on focus/click, dismiss on defocus or the
+  // keyboard's OK / close keys (forwarded as READY / CANCEL).
+  lv_obj_add_event_cb(ta_pattern_filter, on_ta_focused, LV_EVENT_FOCUSED, NULL);
+  lv_obj_add_event_cb(ta_pattern_filter, on_ta_focused, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(ta_pattern_filter, on_ta_defocused, LV_EVENT_DEFOCUSED, NULL);
+  lv_obj_add_event_cb(ta_pattern_filter, on_ta_defocused, LV_EVENT_READY, NULL);
+  lv_obj_add_event_cb(ta_pattern_filter, on_ta_defocused, LV_EVENT_CANCEL, NULL);
 
   // 2x2 action grid: SWEEP / COMP / DSL / WAVE
   struct BtnSpec { const char* text; int x; int y; lv_event_cb_t cb; };
@@ -1108,51 +1130,168 @@ static const char* category_for_pattern(const PatternRef* p) {
   return "Angular OEM";
 }
 
-static bool name_matches_filter(const char* friendly, const char* key,
-                                 const char* filter) {
-  if (!filter || !*filter) return true;
-  // Case-insensitive substring match against friendly name OR key.
-  const char* fn = friendly ? friendly : key;
-  if (!fn) return false;
-  const size_t flen = strlen(filter);
-  for (const char* p = fn; *p; ++p) {
+// ---- Fuzzy search (R3) ----
+//
+// fzf-lite subsequence scorer. `name_matches_filter` is kept as a thin
+// wrapper so the two existing call sites in the dropdown rebuild are
+// unchanged; the rebuild itself uses fuzzy_score() to rank rows.
+
+static inline char ci_lower(char c) {
+  return (char)tolower((unsigned char)c);
+}
+
+// Case-insensitive substring test — lifted from the old matcher loop so we
+// don't depend on the non-portable strcasestr.
+static bool ci_substr(const char* hay, const char* needle) {
+  if (!hay || !needle) return false;
+  if (!*needle) return true;
+  const size_t nlen = strlen(needle);
+  for (const char* p = hay; *p; ++p) {
     size_t i = 0;
-    for (; i < flen; ++i) {
-      char a = (char)tolower((unsigned char)p[i]);
-      char b = (char)tolower((unsigned char)filter[i]);
+    for (; i < nlen; ++i) {
+      char a = ci_lower(p[i]);
+      char b = ci_lower(needle[i]);
       if (!a || a != b) break;
     }
-    if (i == flen) return true;
+    if (i == nlen) return true;
   }
   return false;
 }
 
+// True if `c` begins a "word" relative to the preceding char `prev`:
+// after a separator, or on a digit<->alpha transition.
+static inline bool is_word_boundary(char prev, char c) {
+  if (prev == '_' || prev == '-' || prev == ' ') return true;
+  const bool prev_d = isdigit((unsigned char)prev) != 0;
+  const bool cur_d  = isdigit((unsigned char)c) != 0;
+  const bool prev_a = isalpha((unsigned char)prev) != 0;
+  const bool cur_a  = isalpha((unsigned char)c) != 0;
+  if (prev_d && cur_a) return true;
+  if (prev_a && cur_d) return true;
+  return false;
+}
+
+// Case-insensitive subsequence walk of `needle` over `hay`. Returns INT_MIN
+// when `needle` is not a subsequence; otherwise a positive-ish score that
+// rewards consecutive / word-boundary / start-of-string matches and
+// penalises gaps. Allocation-free, O(|hay|).
+static int fuzzy_score_one(const char* hay, const char* needle) {
+  if (!hay) return INT_MIN;
+  if (!needle || !*needle) return 0;
+
+  int score = 0;
+  bool prev_matched = false;   // was the previous hay char a match?
+  size_t ni = 0;               // index into needle
+  const char* h = hay;
+  char prev_c = '\0';
+
+  for (size_t hi = 0; h[hi]; ++hi) {
+    char hc = ci_lower(h[hi]);
+    char nc = ci_lower(needle[ni]);
+    if (hc == nc) {
+      score += 4;                                  // MATCH
+      if (prev_matched) score += 8;                // CONSECUTIVE
+      if (hi == 0) score += 12;                     // START-OF-STRING
+      else if (is_word_boundary(prev_c, h[hi])) score += 10;  // WORD-BOUNDARY
+      prev_matched = true;
+      if (!needle[++ni]) return score;             // consumed whole needle
+    } else {
+      if (prev_matched == false) score -= 1;       // GAP (only between hits)
+      prev_matched = false;
+    }
+    prev_c = h[hi];
+  }
+  return INT_MIN;  // needle not fully consumed → not a subsequence
+}
+
+// Best score over the friendly name and the raw key, with a strong bonus
+// when either contains the filter as a contiguous (case-insensitive)
+// substring so exact hits rank above scattered subsequences.
+static int fuzzy_score(const PatternRef* p, const char* friendly,
+                       const char* filter) {
+  if (!filter || !*filter) return 0;
+  const char* key = p ? p->name_key : nullptr;
+  int best = INT_MIN;
+  const int sf = fuzzy_score_one(friendly, filter);
+  const int sk = fuzzy_score_one(key, filter);
+  if (sf > best) best = sf;
+  if (sk > best) best = sk;
+  if (best == INT_MIN) return INT_MIN;
+  if (ci_substr(friendly, filter) || ci_substr(key, filter)) best += 100;
+  return best;
+}
+
+static bool name_matches_filter(const char* friendly, const char* key,
+                                 const char* filter) {
+  if (!filter || !*filter) return true;
+  // Wrapper over the scorer so existing call sites stay unchanged: a row
+  // matches iff the filter is a (fuzzy) subsequence of name or key.
+  PatternRef tmp{};
+  tmp.name_key = key;
+  return fuzzy_score(&tmp, friendly, filter) > INT_MIN;
+}
+
+// One scored dropdown candidate. Kept tiny + plain-old-data so the working
+// array below can live in .bss (see note on the static array).
+struct Cand {
+  int16_t     idx;    // builtin index (always a real pattern, never a header)
+  int         score;  // fuzzy_score(); 0 when no filter is active
+  const char* label;  // friendly name (or raw key) — points into .rodata
+};
+
 static void rebuild_pattern_dropdown_options(const char* filter) {
   if (!dd_patterns) return;
-  // Build options string in 4 category-ordered passes.
+  // Build options string in 4 category-ordered passes, ranking rows within
+  // each category by fuzzy score when a filter is active.
   static char opts[4096];
   size_t off = 0;
   s_pattern_dd_entry_count = 0;
 
+  // Scratch candidate buffer for the current category. STATIC on purpose:
+  // ~136 * 16 B ≈ 2.2 KB belongs in .bss, NOT on the 8 KB loopTask stack
+  // that LVGL event dispatch already burdens.
+  static Cand cands[UI_PATTERN_DD_CAP];
+
   const char* cats[] = { "Distributor", "Missing-tooth", "Crank+Cam", "Angular OEM" };
   const size_t n = PatternLibrary::builtinCount();
+  const bool has_filter = (filter && *filter);
 
   for (int ci = 0; ci < 4; ++ci) {
-    // Header.
-    bool category_has_entries = false;
-    // Quick first pass to see if anything matches.
+    // Collect (and score) every matching pattern in this category.
+    int cand_count = 0;
     for (size_t i = 0; i < n; ++i) {
       const PatternRef* p = PatternLibrary::builtinByIndex(i);
       if (!p) continue;
       if (strcmp(category_for_pattern(p), cats[ci]) != 0) continue;
       const char* friendly = PatternLibrary::friendlyName(p->name_key);
-      if (!name_matches_filter(friendly, p->name_key, filter)) continue;
-      category_has_entries = true;
-      break;
+      const char* label = friendly ? friendly : p->name_key;
+      if (!label) continue;
+      const int score = fuzzy_score(p, friendly, filter);  // 0 when no filter
+      if (score == INT_MIN) continue;                       // not a match
+      if (cand_count >= UI_PATTERN_DD_CAP) break;
+      cands[cand_count].idx   = (int16_t)i;
+      cands[cand_count].score = score;
+      cands[cand_count].label = label;
+      ++cand_count;
     }
-    if (!category_has_entries) continue;
+    if (cand_count == 0) continue;
 
-    // Header row.
+    // When filtering, insertion-sort descending by score (stable: equal
+    // scores keep library order). With no filter, all scores are 0 so the
+    // list stays in its current, stable library order — skip the sort.
+    if (has_filter) {
+      for (int a = 1; a < cand_count; ++a) {
+        const Cand key = cands[a];
+        int b = a - 1;
+        while (b >= 0 && cands[b].score < key.score) {
+          cands[b + 1] = cands[b];
+          --b;
+        }
+        cands[b + 1] = key;
+      }
+    }
+
+    // Header row (maps to -1). Preserve the existing capacity guard.
     if (s_pattern_dd_entry_count >= UI_PATTERN_DD_CAP) break;
     if (off > 0 && off + 1 < sizeof(opts)) opts[off++] = '\n';
     {
@@ -1166,21 +1305,16 @@ static void rebuild_pattern_dropdown_options(const char* filter) {
     }
     s_pattern_dd_to_builtin[s_pattern_dd_entry_count++] = -1;
 
-    for (size_t i = 0; i < n; ++i) {
+    // Emit labels and the builtin map in the SAME (ranked) order.
+    for (int k = 0; k < cand_count; ++k) {
       if (s_pattern_dd_entry_count >= UI_PATTERN_DD_CAP) break;
-      const PatternRef* p = PatternLibrary::builtinByIndex(i);
-      if (!p) continue;
-      if (strcmp(category_for_pattern(p), cats[ci]) != 0) continue;
-      const char* friendly = PatternLibrary::friendlyName(p->name_key);
-      const char* label = friendly ? friendly : p->name_key;
-      if (!label) continue;
-      if (!name_matches_filter(friendly, p->name_key, filter)) continue;
+      const char* label = cands[k].label;
       const size_t lab_len = strlen(label);
       if (off + 1 + lab_len + 1 >= sizeof(opts)) break;
       opts[off++] = '\n';
       memcpy(opts + off, label, lab_len);
       off += lab_len;
-      s_pattern_dd_to_builtin[s_pattern_dd_entry_count++] = (int16_t)i;
+      s_pattern_dd_to_builtin[s_pattern_dd_entry_count++] = cands[k].idx;
     }
   }
   if (off < sizeof(opts)) opts[off] = '\0';
@@ -1195,6 +1329,49 @@ static void on_pattern_filter_changed(lv_event_t* e) {
   strncpy(s_pattern_filter, txt ? txt : "", sizeof(s_pattern_filter) - 1);
   s_pattern_filter[sizeof(s_pattern_filter) - 1] = '\0';
   rebuild_pattern_dropdown_options(s_pattern_filter);
+}
+
+// ---- On-screen keyboard (R3) ----
+//
+// One lazily-created keyboard on lv_layer_top(), shared by the filter and
+// DSL textareas. The project default font (dejavu_16_persian_hebrew,
+// lv_conf.h:522) lacks the LV_SYMBOL_* glyphs, so the keyboard's special
+// keys render as tofu — we MUST force montserrat_14 which carries them.
+static lv_obj_t* ui_get_keyboard() {
+  if (kb_filter) return kb_filter;
+  kb_filter = lv_keyboard_create(lv_layer_top());
+  lv_keyboard_set_mode(kb_filter, LV_KEYBOARD_MODE_TEXT_LOWER);
+  lv_obj_set_size(kb_filter, 480, 116);
+  lv_obj_align(kb_filter, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_set_style_text_font(kb_filter, &lv_font_montserrat_14, 0);
+  lv_obj_add_flag(kb_filter, LV_OBJ_FLAG_HIDDEN);
+  return kb_filter;
+}
+
+// Bind the textarea BEFORE unhiding: the keyboard only forwards READY/CANCEL
+// (its OK / close keys) to a bound textarea (lv_keyboard.c:356-374).
+static void kb_show_for(lv_obj_t* ta) {
+  lv_obj_t* kb = ui_get_keyboard();
+  if (!kb || !ta) return;
+  lv_keyboard_set_textarea(kb, ta);
+  lv_obj_move_foreground(kb);
+  lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void kb_hide() {
+  if (!kb_filter) return;
+  lv_keyboard_set_textarea(kb_filter, NULL);  // drop the binding first
+  lv_obj_add_flag(kb_filter, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void on_ta_focused(lv_event_t* e) {
+  lv_obj_t* ta = lv_event_get_target_obj(e);
+  kb_show_for(ta);
+}
+
+static void on_ta_defocused(lv_event_t* e) {
+  LV_UNUSED(e);
+  kb_hide();
 }
 
 // =====================================================
@@ -1410,6 +1587,9 @@ static void on_dsl_err_tick(lv_timer_t* t) {
 
 static void close_dsl_panel(lv_event_t* e) {
   LV_UNUSED(e);
+  // Hide + unbind the keyboard BEFORE deleting the modal so it never holds
+  // a dangling pointer to the about-to-be-freed ta_dsl_src.
+  kb_hide();
   if (tmr_dsl_err) { lv_timer_del(tmr_dsl_err); tmr_dsl_err = nullptr; }
   if (overlay_dsl) { lv_obj_del(overlay_dsl); overlay_dsl = nullptr; }
   ta_dsl_src = nullptr;
@@ -1512,6 +1692,12 @@ static void open_dsl_panel(lv_event_t* e) {
   lv_obj_set_size(ta_dsl_src, 440, 140);
   lv_obj_align(ta_dsl_src, LV_ALIGN_TOP_LEFT, 0, 20);
   lv_textarea_set_placeholder_text(ta_dsl_src, "wheel DSL source...");
+  // Reuse the shared on-screen keyboard for DSL entry.
+  lv_obj_add_event_cb(ta_dsl_src, on_ta_focused, LV_EVENT_FOCUSED, NULL);
+  lv_obj_add_event_cb(ta_dsl_src, on_ta_focused, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(ta_dsl_src, on_ta_defocused, LV_EVENT_DEFOCUSED, NULL);
+  lv_obj_add_event_cb(ta_dsl_src, on_ta_defocused, LV_EVENT_READY, NULL);
+  lv_obj_add_event_cb(ta_dsl_src, on_ta_defocused, LV_EVENT_CANCEL, NULL);
 
   lbl_dsl_err = lv_label_create(panel);
   lv_obj_add_style(lbl_dsl_err, &style_caption, 0);
@@ -1571,78 +1757,138 @@ __attribute__((weak)) const PatternRef* ui_get_active_pattern_for_wave() {
 extern "C" uint16_t ui_get_edge_counter();
 __attribute__((weak)) uint16_t ui_get_edge_counter() { return 0; }
 
+// ---- Bounded direct-to-canvas pixel helpers (R4) ----
+//
+// These write RGB565 (LV_COLOR_FORMAT_NATIVE at LV_COLOR_DEPTH 16) straight
+// into the canvas draw buffer — ZERO lv_draw_* task allocation, so nothing
+// can exhaust the 64 KB LVGL pool the way the old lv_draw_line path did.
+//
+// CRITICAL: all clamps are against the draw-buf header (db->header.w/h) and
+// the row stride is db->header.stride which is in BYTES — never lv_obj
+// geometry, never a hardcoded w*2. lv_canvas_set_buffer() sizes data to
+// exactly stride*h with no slack, so out-of-range clamping is mandatory.
+
+static inline uint16_t* wave_row(lv_draw_buf_t* db, int y) {
+  return (uint16_t*)(db->data + (uint32_t)y * db->header.stride);
+}
+
+// Horizontal run [x0..x1] on row y, color c.
+static void wave_hfill(lv_draw_buf_t* db, int y, int x0, int x1, uint16_t c) {
+  const int W = (int)db->header.w, H = (int)db->header.h;
+  if (y < 0 || y >= H) return;
+  if (x0 > x1) { int t = x0; x0 = x1; x1 = t; }
+  if (x0 < 0) x0 = 0;
+  if (x1 >= W) x1 = W - 1;
+  uint16_t* row = wave_row(db, y);
+  for (int x = x0; x <= x1; ++x) row[x] = c;
+}
+
+// Vertical run [y0..y1] on column x, color c.
+static void wave_vfill(lv_draw_buf_t* db, int x, int y0, int y1, uint16_t c) {
+  const int W = (int)db->header.w, H = (int)db->header.h;
+  if (x < 0 || x >= W) return;
+  if (y0 > y1) { int t = y0; y0 = y1; y1 = t; }
+  if (y0 < 0) y0 = 0;
+  if (y1 >= H) y1 = H - 1;
+  for (int y = y0; y <= y1; ++y) wave_row(db, y)[x] = c;
+}
+
+// Fill the whole buffer with color c.
+static void wave_clear(lv_draw_buf_t* db, uint16_t c) {
+  const int W = (int)db->header.w, H = (int)db->header.h;
+  for (int y = 0; y < H; ++y) {
+    uint16_t* row = wave_row(db, y);
+    for (int x = 0; x < W; ++x) row[x] = c;
+  }
+}
+
 static void on_wave_tick(lv_timer_t* t) {
   LV_UNUSED(t);
   if (!canvas_wave) return;
+  lv_draw_buf_t* db = lv_canvas_get_draw_buf(canvas_wave);
+  if (!db || !db->data) return;
   const PatternRef* p = ui_get_active_pattern_for_wave();
   if (!p || !p->table || p->slot_count == 0) return;
 
-  const lv_coord_t w = lv_obj_get_width(canvas_wave);
-  const lv_coord_t h = lv_obj_get_height(canvas_wave);
+  const int w = (int)db->header.w;
+  const int h = (int)db->header.h;
   if (w <= 0 || h <= 0) return;
+  if (db->header.cf != LV_COLOR_FORMAT_NATIVE) return;  // RGB565 only
 
-  // Clear background.
-  lv_draw_rect_dsc_t bg;
-  lv_draw_rect_dsc_init(&bg);
-  bg.bg_color = lv_color_hex(0x0B1020);
-  bg.bg_opa = LV_OPA_COVER;
-  lv_layer_t layer;
-  lv_canvas_init_layer(canvas_wave, &layer);
-  lv_area_t full = { 0, 0, (lv_coord_t)(w - 1), (lv_coord_t)(h - 1) };
-  lv_draw_rect(&layer, &bg, &full);
-
-  // 3 lanes; lane height = h/3.
-  const int lane_h = h / 3;
-  const lv_color_t lane_colors[3] = {
-    lv_color_hex(0x00E5FF),
-    lv_color_hex(0xFFB020),
-    lv_color_hex(0x7CFFB0),
+  // Pre-pack colors once (lv_color_to_u16 takes an lv_color_t struct, so the
+  // hex literals must go through lv_color_hex first).
+  const uint16_t bg_c = lv_color_to_u16(lv_color_hex(0x0B1020));
+  const uint16_t lane_c[3] = {
+    lv_color_to_u16(lv_color_hex(0x00E5FF)),
+    lv_color_to_u16(lv_color_hex(0xFFB020)),
+    lv_color_to_u16(lv_color_hex(0x7CFFB0)),
   };
+  const uint16_t cursor_c = lv_color_to_u16(lv_color_hex(0xFF4060));
   const uint8_t lane_bits[3] = { 0x01, 0x02, 0x04 };
 
-  const int slot_count = p->slot_count;
-  const int pixels_per_slot = (s_wave_zoom > 0 ? s_wave_zoom : 1);
-  const int total_w = slot_count * pixels_per_slot;
-  const int scroll_x = 0;
-  (void)scroll_x; (void)total_w;
+  wave_clear(db, bg_c);
+
+  const int lane_h = h / 3;
+  const int slot_count = (int)p->slot_count;
+  const int zoom = (s_wave_zoom > 0 ? s_wave_zoom : 1);
+  // Fit mode: when the zoomed pattern is wider than the canvas, decimate
+  // each column over a slot RANGE so the whole wheel stays visible.
+  const bool fit = ((long)slot_count * zoom > (long)w);
 
   for (int lane = 0; lane < 3; ++lane) {
     if (!(s_wave_lane_mask & lane_bits[lane])) continue;
-    const int y_base = lane * lane_h + lane_h - 4;
-    const int y_high = lane * lane_h + 4;
-    lv_draw_line_dsc_t ld;
-    lv_draw_line_dsc_init(&ld);
-    ld.color = lane_colors[lane];
-    ld.width = 2;
-    int prev_y = y_base;
-    for (int s = 0; s < slot_count && s * pixels_per_slot < w; ++s) {
-      const bool bit = (p->table[s] & lane_bits[lane]) != 0;
-      const int y = bit ? y_high : y_base;
-      const int x = s * pixels_per_slot;
-      // Vertical edge.
-      if (y != prev_y && s > 0) {
-        ld.p1.x = x; ld.p1.y = prev_y; ld.p2.x = x; ld.p2.y = y;
-        lv_draw_line(&layer, &ld);
+    const uint16_t c = lane_c[lane];
+    const int y_lo = lane * lane_h + lane_h - 4;   // logic LOW row
+    const int y_hi = lane * lane_h + 4;            // logic HIGH row
+    int prev_y = y_lo;
+
+    for (int x = 0; x < w; ++x) {
+      // Map this column to a slot range [s0..s1].
+      int s0, s1;
+      if (fit) {
+        s0 = (int)((long)x * slot_count / w);
+        s1 = (int)(((long)(x + 1) * slot_count) / w) - 1;
+        if (s1 < s0) s1 = s0;
+      } else {
+        s0 = x / zoom;
+        s1 = s0;
       }
-      // Horizontal level.
-      ld.p1.x = x; ld.p1.y = y; ld.p2.x = x + pixels_per_slot; ld.p2.y = y;
-      lv_draw_line(&layer, &ld);
+      if (s0 >= slot_count) break;
+      if (s1 >= slot_count) s1 = slot_count - 1;
+
+      // Envelope over the slot range: any HIGH / any LOW.
+      bool any_hi = false, any_lo = false;
+      for (int s = s0; s <= s1; ++s) {
+        if (p->table[s] & lane_bits[lane]) any_hi = true;
+        else any_lo = true;
+        if (any_hi && any_lo) break;
+      }
+      const int y = any_hi ? y_hi : y_lo;
+
+      // 2 px vertical edge on level change.
+      if (x > 0 && y != prev_y) {
+        wave_vfill(db, x,     prev_y, y, c);
+        wave_vfill(db, x + 1, prev_y, y, c);
+      }
+      // 2 px horizontal level for this column.
+      wave_hfill(db, y,     x, x, c);
+      wave_hfill(db, y + 1, x, x, c);
+      // Sub-pixel toggling within the range: draw the full envelope.
+      if (any_hi && any_lo) {
+        wave_vfill(db, x, y_hi, y_lo, c);
+      }
       prev_y = y;
     }
   }
 
-  // Cursor — follows getEdgeCounter (M7.1).
+  // Cursor — 1 px, follows getEdgeCounter (M7.1).
   const uint16_t cur = ui_get_edge_counter();
   if (cur < slot_count) {
-    lv_draw_line_dsc_t cd;
-    lv_draw_line_dsc_init(&cd);
-    cd.color = lv_color_hex(0xFF4060);
-    cd.width = 1;
-    const int cx = cur * pixels_per_slot;
-    cd.p1.x = cx; cd.p1.y = 0; cd.p2.x = cx; cd.p2.y = h - 1;
-    lv_draw_line(&layer, &cd);
+    const int cx = fit ? (int)((long)cur * w / slot_count) : (int)cur * zoom;
+    if (cx < w) wave_vfill(db, cx, 0, h - 1, cursor_c);
   }
-  lv_canvas_finish_layer(canvas_wave, &layer);
+
+  lv_obj_invalidate(canvas_wave);
 }
 
 static void close_wave_panel(lv_event_t* e) {
@@ -1673,13 +1919,17 @@ static void open_wave_panel(lv_event_t* e) {
   lv_obj_add_style(title, &style_title, 0);
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
 
-  const int cw = 440;
-  const int ch = 160;
+  // 432x144 → lane_h = 48 exact (old 440x160 left a 160/3 remainder row).
+  const int cw = 432;
+  const int ch = 144;
   const size_t buf_bytes = LV_CANVAS_BUF_SIZE(cw, ch, LV_COLOR_DEPTH, LV_DRAW_BUF_STRIDE_ALIGN);
+  // PSRAM-first: relieves internal system-heap pressure while WAVE is open
+  // (~124 KB). A PSRAM software-render target is fine at 20 Hz.
   canvas_wave_buf = (lv_color_t*)heap_caps_malloc(buf_bytes,
-                                                  MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+                                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!canvas_wave_buf) {
-    canvas_wave_buf = (lv_color_t*)heap_caps_malloc(buf_bytes, MALLOC_CAP_8BIT);
+    canvas_wave_buf = (lv_color_t*)heap_caps_malloc(buf_bytes,
+                                                    MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   }
   if (canvas_wave_buf) {
     canvas_wave = lv_canvas_create(panel);

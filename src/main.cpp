@@ -72,8 +72,8 @@
 
 // -------------------- Pins --------------------
 #define PIN_CKP_OUT        17
-#define PIN_CAM1_OUT       21
-#define PIN_CAM2_OUT       22
+#define PIN_CAM1_OUT       9
+#define PIN_CAM2_OUT       14
 #define PIN_CAPTURE_IN     18
 
 static const char* genErrorString(GenError e) {
@@ -768,21 +768,22 @@ void setup() {
 #if defined(SIGGEN_BACKEND_TABLE)
   // ============================================================
   // ====== USER: SELECT BACKEND OUTPUT PINS ====================
-  // The current cam pin values (21, 22) are INVALID on ESP32-S3:
-  //   - GPIO 21 is owned by the LCD QSPI bus (PINS_JC4827W543.h)
-  //   - GPIO 22 is not a valid pin on the ESP32-S3 SoC
-  // The pin-validation helper in TableCkpGenerator::begin() will
-  // reject them and log the exact reason to Serial.
+  // All three channels — crank + cam1 + cam2 — are driven via the
+  // begin() call below. The pins themselves are assigned ONCE, at
+  // the top of this file:
+  //   #define PIN_CKP_OUT / PIN_CAM1_OUT / PIN_CAM2_OUT (lines 74-76)
+  // To re-map a channel, edit those macros — they are the single
+  // user-editable source of truth for output pins.
   //
-  // For first bench bring-up we initialize CRANK-ONLY so the LCD
-  // and crank channel can be validated end-to-end. To add cam
-  // channels later: replace the -1 args below with valid pins
-  // chosen from the safe set in TableCkpGenerator's
-  // isValidEsp32S3OutputPin() helper.
+  // Each pin is validated inside TableCkpGenerator::begin() by the
+  // isValidEsp32S3OutputPin() helper; any pin rejected as
+  // invalid/reserved is logged to Serial with the exact reason and
+  // the call fails (genOk == false).
   // ============================================================
-  const bool genOk = gGen.begin(PIN_CKP_OUT, /*cam1=*/-1, /*cam2=*/-1);
-  Serial.printf("[boot] generator init: %s (crank pin=%d)\n",
-                genOk ? "OK" : "FAILED", (int)PIN_CKP_OUT);
+  const bool genOk = gGen.begin(PIN_CKP_OUT, PIN_CAM1_OUT, PIN_CAM2_OUT);
+  Serial.printf("[boot] generator init: %s (crank pin=%d cam1 pin=%d cam2 pin=%d)\n",
+                genOk ? "OK" : "FAILED",
+                (int)PIN_CKP_OUT, (int)PIN_CAM1_OUT, (int)PIN_CAM2_OUT);
   if (!genOk) {
     Serial.printf("[boot] generator error: %s\n",
                   genErrorString(gGen.lastError()));

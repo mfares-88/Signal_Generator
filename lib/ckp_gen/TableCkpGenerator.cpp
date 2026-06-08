@@ -11,11 +11,11 @@
 #include <esp_err.h>
 
 // ESP-IDF drivers exposed by the pioarduino arduino-esp32 framework.
-#include "driver/gptimer.h"
 #include "driver/dedic_gpio.h"
 #include "driver/gpio.h"
-#include "esp_timer.h"
+#include "driver/gptimer.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 
 #include <string.h>
 
@@ -49,17 +49,35 @@ static bool isValidEsp32S3OutputPin(int pin) {
   //   SD card: 10, 11, 12, 13
   //   I2S audio: 42, 2, 41
   switch (pin) {
-    case 45: case 47: case 21: case 48: case 40: case 39:
-      Serial.printf("[gen] pin %d reserved for LCD QSPI\n", pin); return false;
-    case 1:
-      Serial.printf("[gen] pin %d reserved for LCD backlight\n", pin); return false;
-    case 8: case 4: case 38:
-      Serial.printf("[gen] pin %d reserved for GT911 touch\n", pin); return false;
-    case 10: case 11: case 12: case 13:
-      Serial.printf("[gen] pin %d reserved for SD card\n", pin); return false;
-    case 42: case 2: case 41:
-      Serial.printf("[gen] pin %d reserved for I2S audio\n", pin); return false;
-    default: break;
+  case 45:
+  case 47:
+  case 21:
+  case 48:
+  case 40:
+  case 39:
+    Serial.printf("[gen] pin %d reserved for LCD QSPI\n", pin);
+    return false;
+  case 1:
+    Serial.printf("[gen] pin %d reserved for LCD backlight\n", pin);
+    return false;
+  case 8:
+  case 4:
+  case 38:
+    Serial.printf("[gen] pin %d reserved for GT911 touch\n", pin);
+    return false;
+  case 10:
+  case 11:
+  case 12:
+  case 13:
+    Serial.printf("[gen] pin %d reserved for SD card\n", pin);
+    return false;
+  case 42:
+  case 2:
+  case 41:
+    Serial.printf("[gen] pin %d reserved for I2S audio\n", pin);
+    return false;
+  default:
+    break;
   }
   return true;
 }
@@ -69,23 +87,11 @@ static bool isValidEsp32S3OutputPin(int pin) {
 // ---------------------------------------------------------------------------
 
 TableCkpGenerator::TableCkpGenerator()
-  : _pin_crank(-1),
-    _pin_cam1(-1),
-    _pin_cam2(-1),
-    _bundle_width(0),
-    _bundle_mask(0),
-    _table(nullptr),
-    _slot_count(0),
-    _edge_counter(0),
-    _invert_mask(0),
-    _reverse(false),
-    _cycle_start_us(0),
-    _cycle_duration_us(0),
-    _last_rpm(0),
-    _timer(nullptr),
-    _bundle(nullptr),
-    _running(false),
-    _initialized(false) {}
+    : _pin_crank(-1), _pin_cam1(-1), _pin_cam2(-1), _bundle_width(0),
+      _bundle_mask(0), _table(nullptr), _slot_count(0), _edge_counter(0),
+      _invert_mask(0), _reverse(false), _cycle_start_us(0),
+      _cycle_duration_us(0), _last_rpm(0), _timer(nullptr), _bundle(nullptr),
+      _running(false), _initialized(false) {}
 
 TableCkpGenerator::~TableCkpGenerator() {
   // Best-effort teardown. We don't attempt to re-enter the driver in
@@ -138,14 +144,14 @@ bool TableCkpGenerator::begin(int pin_crank, int pin_cam1, int pin_cam2) {
   }
 
   _pin_crank = pin_crank;
-  _pin_cam1  = pin_cam1;
-  _pin_cam2  = pin_cam2;
+  _pin_cam1 = pin_cam1;
+  _pin_cam2 = pin_cam2;
 
   // 1. Build the bundle pin array. Order matters — index 0 → bit0 (crank),
   //    index 1 → bit1 (cam1), index 2 → bit2 (cam2). This matches the
   //    Ardu-Stim byte-packing convention so a byte read from a PatternRef
   //    table can be written straight to the bundle.
-  int  bundle_pins[3] = { _pin_crank, 0, 0 };
+  int bundle_pins[3] = {_pin_crank, 0, 0};
   uint8_t width = 1;
   if (pin_cam1 >= 0) {
     bundle_pins[1] = pin_cam1;
@@ -156,27 +162,46 @@ bool TableCkpGenerator::begin(int pin_crank, int pin_cam1, int pin_cam2) {
     }
   }
   _bundle_width = width;
-  _bundle_mask  = (uint8_t)((1u << width) - 1u);  // 0x01 / 0x03 / 0x07
+  _bundle_mask = (uint8_t)((1u << width) - 1u); // 0x01 / 0x03 / 0x07
 
   // 2. Configure all participating GPIOs as plain OUTPUT first; dedic_gpio
   //    requires the underlying pins to already be in OUTPUT mode.
   uint64_t pin_mask = (1ULL << _pin_crank);
-  if (width >= 2) pin_mask |= (1ULL << bundle_pins[1]);
-  if (width >= 3) pin_mask |= (1ULL << bundle_pins[2]);
+  if (width >= 2)
+    pin_mask |= (1ULL << bundle_pins[1]);
+  if (width >= 3)
+    pin_mask |= (1ULL << bundle_pins[2]);
 
   gpio_config_t io_cfg = {};
   io_cfg.pin_bit_mask = pin_mask;
-  io_cfg.mode         = GPIO_MODE_OUTPUT;
-  io_cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
+  io_cfg.mode = GPIO_MODE_OUTPUT;
+  io_cfg.pull_up_en = GPIO_PULLUP_DISABLE;
   io_cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  io_cfg.intr_type    = GPIO_INTR_DISABLE;
+  io_cfg.intr_type = GPIO_INTR_DISABLE;
   if (gpio_config(&io_cfg) != ESP_OK) {
     _last_error = GenError::GPIO_FAIL;
     return false;
   }
   gpio_set_level((gpio_num_t)_pin_crank, 0);
-  if (width >= 2) gpio_set_level((gpio_num_t)bundle_pins[1], 0);
-  if (width >= 3) gpio_set_level((gpio_num_t)bundle_pins[2], 0);
+  if (width >= 2)
+    gpio_set_level((gpio_num_t)bundle_pins[1], 0);
+  if (width >= 3)
+    gpio_set_level((gpio_num_t)bundle_pins[2], 0);
+
+  // Lower output drive strength to slow the native edge rate, reducing
+  // scope-ground-lead ringing and EMI coupling on the bench, without
+  // changing the logical waveform or timing.
+  // NOTE: chip default is GPIO_DRIVE_CAP_2 (~20 mA — the medium/default
+  // setting; CAP_3 ~40 mA is the strongest). The SDK enum names
+  // (weak/stronger/medium/strongest) are misleading; numerically
+  // 0<1<2<3 = ~5/10/20/40 mA. CAP_1 (~10 mA) therefore LOWERS drive
+  // vs default while keeping a crisp 0/3.3 V swing into a high-Z input.
+  static constexpr gpio_drive_cap_t kOutputDriveCap = GPIO_DRIVE_CAP_1;
+  gpio_set_drive_capability((gpio_num_t)_pin_crank, kOutputDriveCap);
+  if (width >= 2)
+    gpio_set_drive_capability((gpio_num_t)bundle_pins[1], kOutputDriveCap);
+  if (width >= 3)
+    gpio_set_drive_capability((gpio_num_t)bundle_pins[2], kOutputDriveCap);
 
   // 3. Allocate the dedic_gpio bundle of the chosen width.
   dedic_gpio_bundle_config_t bundle_cfg = {};
@@ -191,9 +216,9 @@ bool TableCkpGenerator::begin(int pin_crank, int pin_cam1, int pin_cam2) {
   // 4. Build the gptimer with a 1 MHz resolution (= 1 µs per tick) and
   //    a non-zero default alarm. The alarm is reprogrammed by apply().
   gptimer_config_t timer_cfg = {};
-  timer_cfg.clk_src       = GPTIMER_CLK_SRC_DEFAULT;
-  timer_cfg.direction     = GPTIMER_COUNT_UP;
-  timer_cfg.resolution_hz = 1000000;   // 1 µs tick
+  timer_cfg.clk_src = GPTIMER_CLK_SRC_DEFAULT;
+  timer_cfg.direction = GPTIMER_COUNT_UP;
+  timer_cfg.resolution_hz = 1000000; // 1 µs tick
   if (gptimer_new_timer(&timer_cfg, &_timer) != ESP_OK) {
     _last_error = GenError::TIMER_FAIL;
     return false;
@@ -207,7 +232,7 @@ bool TableCkpGenerator::begin(int pin_crank, int pin_cam1, int pin_cam2) {
   }
 
   gptimer_alarm_config_t alarm_cfg = {};
-  alarm_cfg.alarm_count = 1000;        // 1 ms placeholder
+  alarm_cfg.alarm_count = 1000; // 1 ms placeholder
   alarm_cfg.reload_count = 0;
   alarm_cfg.flags.auto_reload_on_alarm = true;
   if (gptimer_set_alarm_action(_timer, &alarm_cfg) != ESP_OK) {
@@ -229,7 +254,7 @@ bool TableCkpGenerator::begin(int pin_crank, int pin_cam1, int pin_cam2) {
   // To tune buffer size: change kPlaybackBufferBytes in TableCkpGenerator.h.
   // Current allocation: 24 KB. Max slot_count enforced in apply().
   // =====================================================================
-  _playback_buffer = (uint8_t*)heap_caps_malloc(
+  _playback_buffer = (uint8_t *)heap_caps_malloc(
       kPlaybackBufferBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (_playback_buffer == nullptr) {
     Serial.printf("[gen] begin: failed to allocate %u-byte playback buffer\n",
@@ -249,17 +274,29 @@ bool TableCkpGenerator::begin(int pin_crank, int pin_cam1, int pin_cam2) {
 // apply() — switch active pattern (manager-thread only; not ISR-safe)
 // ---------------------------------------------------------------------------
 
-bool TableCkpGenerator::apply(const PatternRef& ref, uint32_t rpm) {
-  if (!_initialized)             { _last_error = GenError::NOT_INITIALIZED; return false; }
-  if (ref.table == nullptr)      { _last_error = GenError::NO_TABLE;        return false; }
-  if (ref.slot_count == 0)       { _last_error = GenError::BAD_SLOT_COUNT;  return false; }
+bool TableCkpGenerator::apply(const PatternRef &ref, uint32_t rpm) {
+  if (!_initialized) {
+    _last_error = GenError::NOT_INITIALIZED;
+    return false;
+  }
+  if (ref.table == nullptr) {
+    _last_error = GenError::NO_TABLE;
+    return false;
+  }
+  if (ref.slot_count == 0) {
+    _last_error = GenError::BAD_SLOT_COUNT;
+    return false;
+  }
   if (ref.slot_count > kPlaybackBufferBytes) {
     Serial.printf("[gen] apply: pattern slot_count=%u exceeds 24KB buffer\n",
                   (unsigned)ref.slot_count);
     _last_error = GenError::BUFFER_OVERFLOW;
     return false;
   }
-  if (rpm < 10)                  { _last_error = GenError::BAD_RPM;         return false; }
+  if (rpm < 10) {
+    _last_error = GenError::BAD_RPM;
+    return false;
+  }
 
   // Pause the timer while we swap pointer/slot_count to keep the ISR's
   // (_table, _slot_count) pair consistent.
@@ -272,10 +309,10 @@ bool TableCkpGenerator::apply(const PatternRef& ref, uint32_t rpm) {
   // DRAM buffer so the ISR is cache-safe during NVS/LittleFS writes.
   memcpy(_playback_buffer, ref.table, ref.slot_count);
 
-  _table             = _playback_buffer;
-  _slot_count        = ref.slot_count;
-  _edge_counter      = 0;
-  _cycle_start_us    = (uint32_t)micros();
+  _table = _playback_buffer;
+  _slot_count = ref.slot_count;
+  _edge_counter = 0;
+  _cycle_start_us = (uint32_t)micros();
   _cycle_duration_us = 0;
 
   if (!reprogramAlarm(rpm)) {
@@ -296,10 +333,14 @@ bool TableCkpGenerator::apply(const PatternRef& ref, uint32_t rpm) {
 // ---------------------------------------------------------------------------
 
 bool TableCkpGenerator::setRpm(uint32_t rpm) {
-  if (!_initialized)         return false;
-  if (_table == nullptr)     return false;
-  if (_slot_count == 0)      return false;
-  if (rpm < 10)              return false;
+  if (!_initialized)
+    return false;
+  if (_table == nullptr)
+    return false;
+  if (_slot_count == 0)
+    return false;
+  if (rpm < 10)
+    return false;
   return reprogramAlarm(rpm);
 }
 
@@ -312,11 +353,11 @@ bool TableCkpGenerator::reprogramAlarm(uint32_t rpm) {
   }
   uint64_t period_us = 60000000ULL / denom;
   if (period_us == 0) {
-    period_us = 1;  // floor — clip to 1 µs to keep gptimer alarming
+    period_us = 1; // floor — clip to 1 µs to keep gptimer alarming
   }
 
   gptimer_alarm_config_t alarm_cfg = {};
-  alarm_cfg.alarm_count  = period_us;
+  alarm_cfg.alarm_count = period_us;
   alarm_cfg.reload_count = 0;
   alarm_cfg.flags.auto_reload_on_alarm = true;
   if (gptimer_set_alarm_action(_timer, &alarm_cfg) != ESP_OK) {
@@ -337,23 +378,31 @@ void TableCkpGenerator::setInverted(uint8_t channel_mask) {
   _invert_mask = channel_mask;
 }
 
-uint8_t TableCkpGenerator::getInverted() const {
-  return _invert_mask;
-}
+uint8_t TableCkpGenerator::getInverted() const { return _invert_mask; }
 
 void TableCkpGenerator::setReverse(bool reverse) {
-  _reverse = reverse;   // single-byte volatile store — atomic
+  _reverse = reverse; // single-byte volatile store — atomic
 }
 
-bool TableCkpGenerator::getReverse() const {
-  return _reverse;
-}
+bool TableCkpGenerator::getReverse() const { return _reverse; }
 
 bool TableCkpGenerator::start() {
-  if (!_initialized) { _last_error = GenError::NOT_INITIALIZED; return false; }
-  if (_running)      { _last_error = GenError::OK; return true; }
-  if (_table == nullptr)  { _last_error = GenError::NO_TABLE;       return false; }
-  if (_slot_count == 0)   { _last_error = GenError::BAD_SLOT_COUNT; return false; }
+  if (!_initialized) {
+    _last_error = GenError::NOT_INITIALIZED;
+    return false;
+  }
+  if (_running) {
+    _last_error = GenError::OK;
+    return true;
+  }
+  if (_table == nullptr) {
+    _last_error = GenError::NO_TABLE;
+    return false;
+  }
+  if (_slot_count == 0) {
+    _last_error = GenError::BAD_SLOT_COUNT;
+    return false;
+  }
   gptimer_set_raw_count(_timer, 0);
   esp_err_t err = gptimer_start(_timer);
   if (err != ESP_OK) {
@@ -367,8 +416,14 @@ bool TableCkpGenerator::start() {
 }
 
 bool TableCkpGenerator::stop() {
-  if (!_initialized) { _last_error = GenError::NOT_INITIALIZED; return false; }
-  if (!_running)     { _last_error = GenError::OK; return true; }
+  if (!_initialized) {
+    _last_error = GenError::NOT_INITIALIZED;
+    return false;
+  }
+  if (!_running) {
+    _last_error = GenError::OK;
+    return true;
+  }
   esp_err_t err = gptimer_stop(_timer);
   if (err != ESP_OK) {
     Serial.printf("[gen] gptimer_stop failed: %d\n", (int)err);
@@ -392,7 +447,7 @@ uint16_t TableCkpGenerator::getEdgeCounter() const {
 }
 
 uint32_t TableCkpGenerator::getCycleStartUs() const {
-  return _cycle_start_us;   // aligned 32-bit atomic read
+  return _cycle_start_us; // aligned 32-bit atomic read
 }
 
 uint32_t TableCkpGenerator::getCycleDurationUs() const {
@@ -417,10 +472,9 @@ uint32_t TableCkpGenerator::getCycleDurationUs() const {
 //   (5) return false.
 //
 bool IRAM_ATTR TableCkpGenerator::onAlarm(
-    gptimer_handle_t /*timer*/,
-    const gptimer_alarm_event_data_t* /*edata*/,
-    void* user_ctx) {
-  TableCkpGenerator* self = static_cast<TableCkpGenerator*>(user_ctx);
+    gptimer_handle_t /*timer*/, const gptimer_alarm_event_data_t * /*edata*/,
+    void *user_ctx) {
+  TableCkpGenerator *self = static_cast<TableCkpGenerator *>(user_ctx);
   uint16_t e = self->_edge_counter;
 
   // Statement 1: load byte from .rodata table and apply inversion mask.
@@ -437,7 +491,7 @@ bool IRAM_ATTR TableCkpGenerator::onAlarm(
     e = 0;
     uint32_t now = (uint32_t)esp_timer_get_time();
     self->_cycle_duration_us = now - self->_cycle_start_us;
-    self->_cycle_start_us    = now;
+    self->_cycle_start_us = now;
   }
   // Statement 4: commit advanced counter.
   self->_edge_counter = e;
