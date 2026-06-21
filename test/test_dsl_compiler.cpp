@@ -18,8 +18,6 @@
 //      bytes over 720°), so the 240-byte interpretation is the one
 //      that's consistent with the integration report. See the open
 //      questions section in the dispatch report.
-//   4. dslCompileSignalConfig() round-trips a 60-2 SignalConfig through
-//      the DSL pipeline.
 //
 // Builds: same dual-mode shim as test_dsl_lexer.cpp.
 
@@ -32,9 +30,9 @@
 #include "../lib/dsl/Validator.h"
 #include "../lib/dsl/Compiler.h"
 #include "../lib/ckp_gen/PatternRef.h"
-// Note: SignalConfig is declared either by Dsl.h (host-test stub) or by
-// CkpGenerator.h on Arduino-ESP32 firmware builds. Including Dsl.h above
-// (via Compiler.h) takes care of both.
+// Note: the SignalConfig POD remains declared by Dsl.h (host-test stub) /
+// CkpGenerator.h (firmware), but the DSL compiler no longer exposes a
+// SignalConfig adapter, so these tests exercise dslCompile() only.
 
 // ── Assertion shim ─────────────────────────────────────────────────────────
 
@@ -275,47 +273,6 @@ static void test_compile_60_2_halfmoon_cam(void) {
   dslFree(r.pattern);
 }
 
-// ── SignalConfig adapter (M5.5) ────────────────────────────────────────────
-
-static void test_signalconfig_60_2(void) {
-  SignalConfig cfg{};
-  cfg.rpm    = 1000;
-  cfg.nTeeth = 60;
-  cfg.pMiss  = 1;
-  cfg.nMiss  = 2;
-  cfg.gapPos = GAP_AT_END;
-  cfg.gapLvl = false;
-
-  DslResult r = dslCompileSignalConfig(cfg);
-  DSL_CHECK(r.ok, "signalconfig 60-2 compiles");
-  if (!r.ok) { fprintf(stderr, "  err=%s\n", r.error); return; }
-  DSL_EQ_INT(r.pattern.slot_count, 120, "60×2 = 120 slots, no cam");
-  DSL_EQ_INT(r.pattern.degrees, 360, "360°");
-  DSL_EQ_INT(r.pattern.channel_mask, 0x01, "pin1 only");
-  int crank_high = countBitSet(r.pattern.table, r.pattern.slot_count, 0x01);
-  DSL_EQ_INT(crank_high, 58, "58 crank HIGH slots");
-  dslFree(r.pattern);
-}
-
-static void test_signalconfig_pure_symmetric(void) {
-  // pMiss == 0 ⇒ symmetric output.
-  SignalConfig cfg{};
-  cfg.rpm    = 1000;
-  cfg.nTeeth = 36;
-  cfg.pMiss  = 0;
-  cfg.nMiss  = 0;
-  cfg.gapPos = GAP_AT_END;
-  cfg.gapLvl = false;
-
-  DslResult r = dslCompileSignalConfig(cfg);
-  DSL_CHECK(r.ok, "pure symmetric compiles");
-  if (!r.ok) { fprintf(stderr, "  err=%s\n", r.error); return; }
-  DSL_EQ_INT(r.pattern.slot_count, 72, "36×2 = 72 slots");
-  int crank_high = countBitSet(r.pattern.table, r.pattern.slot_count, 0x01);
-  DSL_EQ_INT(crank_high, 36, "36 HIGH slots");
-  dslFree(r.pattern);
-}
-
 // ── Negative tests ─────────────────────────────────────────────────────────
 
 static void test_compile_empty_source(void) {
@@ -340,8 +297,6 @@ static void run_all(void) {
   test_compile_36_1_with_cam_pulse();
   test_compile_nissan_360();
   test_compile_60_2_halfmoon_cam();
-  test_signalconfig_60_2();
-  test_signalconfig_pure_symmetric();
   test_compile_empty_source();
   test_compile_garbage();
 }
@@ -370,8 +325,6 @@ int main(void) {
   RUN_TEST(test_compile_36_1_with_cam_pulse);
   RUN_TEST(test_compile_nissan_360);
   RUN_TEST(test_compile_60_2_halfmoon_cam);
-  RUN_TEST(test_signalconfig_60_2);
-  RUN_TEST(test_signalconfig_pure_symmetric);
   RUN_TEST(test_compile_empty_source);
   RUN_TEST(test_compile_garbage);
   return UNITY_END();

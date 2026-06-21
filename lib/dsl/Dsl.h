@@ -20,8 +20,6 @@
 //   - .table is allocated with heap_caps_malloc(len, MALLOC_CAP_SPIRAM).
 //   - dslFree() releases it. Builtin PatternRefs (from .rodata) MUST NOT be
 //     passed to dslFree(); only DslResult.pattern from dslCompile* belongs here.
-//   - dslCompileSignalConfig() is NOT a separate code path — it constructs an
-//     equivalent DSL source string in-memory and feeds it through dslCompile().
 //
 // Status: M5.1 dispatch declares this surface only; bodies live in
 // Lexer.cpp (now) and Parser.cpp / Compiler.cpp / Validator.cpp (M5.2+).
@@ -70,11 +68,6 @@ struct DslResult {
 // dslFree() to release it. On failure, .ok == false and .error/.error_offset
 // describe the diagnostic; .pattern.table is guaranteed nullptr.
 DslResult dslCompile(const char* source);
-
-// Compile a legacy UI "custom" SignalConfig modal entry into a PatternRef.
-// Internally converts cfg → DSL source string → dslCompile(). Same memory
-// ownership rules as dslCompile().
-DslResult dslCompileSignalConfig(const SignalConfig& cfg);
 
 // Release a PatternRef.table previously returned by dslCompile* via
 // heap_caps_free. Safe on a default-constructed/zeroed PatternRef. After
