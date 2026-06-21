@@ -31,13 +31,18 @@
 //   AVR:  OCR1A = 8_000_000 / (rpm_scaler * rpm)
 //         where rpm_scaler = slot_count / 120, and the AVR timer prescaler
 //         yields OCR1A counts in units of (1 / 8 MHz) seconds == 0.125 us.
-//   ESP32 at 1 MHz tick — we want microseconds-per-slot directly:
-//             period_us = 60_000_000 / (rpm * slot_count)
-//   This is the canonical "RPM * slots_per_rev" inversion: 1 minute /
-//   (rpm * slots_per_rev) = seconds per slot, * 1e6 = microseconds.
-//   (Note: for 720-degree patterns the table represents two revolutions,
-//    so slot_count already accounts for the doubling; the formula still
-//    yields the correct per-slot dwell.)
+//   ESP32 at 1 MHz tick — we want microseconds-per-slot directly, with RPM
+//   interpreted as a UNIVERSAL CRANK RPM across both 360 and 720 spans:
+//             period_us = 60_000_000 * table_degrees / (360 * rpm * slot_count)
+//   For a 360-degree table this reduces to 60_000_000 / (rpm * slot_count)
+//   (one revolution = one engine cycle). For a 720-degree table the span is
+//   two crank revolutions, so the numerator carries the 720/360 = 2 factor:
+//   the full table now takes 2× wall-clock per crank-rev → the cam (½ crank)
+//   runs at half rate, which is physically correct. The previous unscaled
+//   formula 60_000_000/(rpm*slot_count) was WRONG for 720 tables (it doubled
+//   the crank rate, e.g. 800 RPM read as 1600 on CKP+CMP patterns); the
+//   table_degrees scaling fixes that. table_degrees is stored in
+//   _table_degrees (set in apply() from PatternRef.degrees).
 //
 // ISR hard contract (per §6 Agent A — ≤ 5 statements of real work):
 //   1) byte = table[edge] XOR invert_mask        (load + XOR fused)
@@ -133,6 +138,11 @@ private:
   // pointer/slot_count pair stays consistent for ISR readers.
   const uint8_t* _table;
   uint16_t       _slot_count;
+  // Degree span of the active table (360 or 720). Set in apply() from
+  // PatternRef.degrees (clamped to 360 for any non-720 value) and read by
+  // reprogramAlarm() so the period scales by crank-degrees — keeping RPM a
+  // universal CRANK RPM across 360 and 720 patterns. See header timing note.
+  uint16_t       _table_degrees;
 
   // --- Runtime state ---
   volatile uint16_t _edge_counter;

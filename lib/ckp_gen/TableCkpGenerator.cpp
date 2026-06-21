@@ -88,7 +88,8 @@ static bool isValidEsp32S3OutputPin(int pin) {
 
 TableCkpGenerator::TableCkpGenerator()
     : _pin_crank(-1), _pin_cam1(-1), _pin_cam2(-1), _bundle_width(0),
-      _bundle_mask(0), _table(nullptr), _slot_count(0), _edge_counter(0),
+      _bundle_mask(0), _table(nullptr), _slot_count(0), _table_degrees(360),
+      _edge_counter(0),
       _invert_mask(0), _reverse(false), _cycle_start_us(0),
       _cycle_duration_us(0), _last_rpm(0), _timer(nullptr), _bundle(nullptr),
       _running(false), _initialized(false) {}
@@ -311,6 +312,12 @@ bool TableCkpGenerator::apply(const PatternRef &ref, uint32_t rpm) {
 
   _table = _playback_buffer;
   _slot_count = ref.slot_count;
+  // Persist the degree span BEFORE reprogramAlarm(rpm) below so the scaled
+  // period formula never sees an uninitialized span (ordering invariant:
+  // setRpm() is always preceded by an apply() that publishes _table +
+  // _table_degrees together). Only 360/720 are legal — clamp anything else
+  // to 360 (single-rev) per the crank-RPM scaling.
+  _table_degrees = (ref.degrees == 720) ? 720 : 360;
   _edge_counter = 0;
   _cycle_start_us = (uint32_t)micros();
   _cycle_duration_us = 0;
@@ -345,13 +352,17 @@ bool TableCkpGenerator::setRpm(uint32_t rpm) {
 }
 
 bool TableCkpGenerator::reprogramAlarm(uint32_t rpm) {
-  // period_us = 60_000_000 / (rpm * slot_count)
+  // period_us = 60_000_000 * _table_degrees / (360 * rpm * slot_count)
+  // RPM is a UNIVERSAL CRANK RPM: a 720 span (2 crank revs) carries the
+  // 720/360=2 factor in the numerator → half rate (cam = ½ crank). For a
+  // 360 span this reduces to 60_000_000/(rpm*slot_count).
   // (See header comment for equivalence with Ardu-Stim's OCR1A formula.)
-  uint64_t denom = (uint64_t)rpm * (uint64_t)_slot_count;
+  // uint64 overflow-safe: 60_000_000*720 fits uint64; denom 360*6000*4096 fits.
+  uint64_t denom = 360ULL * (uint64_t)rpm * (uint64_t)_slot_count;
   if (denom == 0) {
     return false;
   }
-  uint64_t period_us = 60000000ULL / denom;
+  uint64_t period_us = 60000000ULL * (uint64_t)_table_degrees / denom;
   if (period_us == 0) {
     period_us = 1; // floor — clip to 1 µs to keep gptimer alarming
   }
