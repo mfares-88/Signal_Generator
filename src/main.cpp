@@ -9,12 +9,7 @@
 //                               backend) drives the manager↔generator path.
 //                               MSG_SET_PATTERN routes legacy preset indices
 //                               through PatternLibrary::builtinByIndex().
-//                               This is the S3 production build.
-//   (unset)                   → TimerCkpGenerator legacy slot-machine fallback.
-//                               MSG_SET_PATTERN keeps the original
-//                               SignalConfig → applySignalConfig path so the
-//                               WROOM environment (no PSRAM / no LittleFS /
-//                               no UI) continues to ship.
+//                               This is the S3 production build (always on).
 //
 // All UI inputs flow through gCtrlQ; UI callbacks never call the generator
 // directly (per §6 Agent E hard rules). The LVGL pending-flag pattern in
@@ -52,10 +47,9 @@
   typedef void (*ui_on_rpm_cb)(uint32_t rpm);
   typedef void (*ui_on_pattern_cb)(uint8_t pattern_index);
   typedef void (*ui_on_run_cb)(bool running);
-  typedef void (*ui_on_custom_cb)(const SignalConfig& cfg);
   typedef void (*ui_on_invert_cb)(bool inverted);
   static inline bool ui_init(ui_on_rpm_cb, ui_on_pattern_cb, ui_on_run_cb,
-                             ui_on_custom_cb, ui_on_invert_cb) { return true; }
+                             ui_on_invert_cb) { return true; }
   static inline bool ui_is_ready() { return false; }
   static inline void ui_update_rpm(uint32_t)               {}
   static inline void ui_update_pattern(uint8_t)            {}
@@ -122,23 +116,15 @@ static inline void bumpUiMsgDropCount() {
 
 // ---- Backend selection -------------------------------------------------
 //
-// M1.3 swap: prefer the native byte-table backend on S3; keep the legacy
-// slot machine on WROOM (no UI, no PSRAM — algorithmic ISR is sufficient).
-#if defined(SIGGEN_BACKEND_TABLE)
-  static TableCkpGenerator gGenInstance;
-#else
-  static TimerCkpGenerator gGenInstance;
-#endif
+// M1.3: the native byte-table backend drives the manager↔generator path.
+static TableCkpGenerator gGenInstance;
 static IGenerator& gGen = gGenInstance;
-// Alias for back-compat in any straggler references; not exposed publicly.
-#define genTX gGenInstance
 
 static EdgePulseCapture  capRX;
 
-// gCfg / gPatternIdx live on for the legacy SignalConfig pathway (MSG_SET_PATTERN,
-// MSG_SET_CUSTOM, MSG_SET_RPM). When SIGGEN_BACKEND_TABLE is on, gPatternIdx
-// shadows the active builtin index for UI sync purposes; gCfg.rpm still
-// represents the operator's "base RPM" target (sweep task rides on top).
+// gCfg / gPatternIdx: gPatternIdx shadows the active builtin index for UI
+// sync purposes; gCfg.rpm still represents the operator's "base RPM" target
+// (sweep task rides on top).
 static SignalConfig gCfg{1000, 60, 1, 2, GAP_AT_END, false};
 static uint8_t gPatternIdx = 0;
 static volatile bool gRunning = true;
@@ -163,7 +149,7 @@ extern "C" uint16_t ui_get_edge_counter() {
 // ---- DSL scratch leak management (TODO 2) ------------------------------
 //
 // The manager owns the lifetime of the single "scratch_dsl" PSRAM table
-// produced by MSG_LOAD_DSL (and by the MSG_SET_CUSTOM compile path). On a
+// produced by MSG_LOAD_DSL. On a
 // subsequent compile we must dslFree() the previous table before
 // publishing the new one. cleanupScratchDsl() is the single drain point
 // for any swap that may abandon the active DSL table.
@@ -195,20 +181,6 @@ static void publish_dsl_error(const char* msg) {
   portEXIT_CRITICAL(&g_dsl_error_mux);
 }
 
-#if !defined(SIGGEN_BACKEND_TABLE)
-static inline SignalConfig patternFromIndex(uint8_t idx, uint32_t rpmCurrent) {
-  SignalConfig c{rpmCurrent, 60, 1, 2, GAP_AT_END, false};
-  switch (idx) {
-    case 0: c = {rpmCurrent, 60, 1, 2, GAP_AT_END, false}; break; // 60-2
-    case 1: c = {rpmCurrent, 36, 1, 1, GAP_AT_END, false}; break; // 36-1
-    case 2: c = {rpmCurrent, 36, 1, 2, GAP_AT_END, false}; break; // 36-2
-    case 3: c = {rpmCurrent, 36, 2, 1, GAP_AT_END, false}; break; // 36-1-1
-    case 4: c = {rpmCurrent, 12, 1, 1, GAP_AT_START, true}; break; // 12-1 (HIGH sync)
-  }
-  return c;
-}
-#endif
-
 bool sendCtrlMsg(const CtrlMsg& msg) {
   if (!gCtrlQ) {
     bumpUiMsgDropCount();
@@ -235,17 +207,10 @@ static void on_ui_rpm(uint32_t rpm) {
 
 static void on_ui_pattern(uint8_t idx) {
   // M3.4: UI dropdown emits the builtin index directly; route through
-  // MSG_SELECT_BUILTIN on the TABLE backend, keep legacy MSG_SET_PATTERN
-  // on the LEGACY backend (5 presets only).
-#if defined(SIGGEN_BACKEND_TABLE)
+  // MSG_SELECT_BUILTIN on the TABLE backend.
   CtrlMsg m{};
   m.type = MSG_SELECT_BUILTIN;
   m.payload.val = (int32_t)idx;
-#else
-  CtrlMsg m{};
-  m.type = MSG_SET_PATTERN;
-  m.payload.val = (int32_t)idx;
-#endif
   if (!sendCtrlMsg(m)) {
     ui_show_error("Control queue full");
     ui_update_pattern(gPatternIdx);
@@ -257,18 +222,6 @@ static void on_ui_run(bool running) {
   m.type = running ? MSG_START : MSG_STOP;
   if (!sendCtrlMsg(m)) {
     ui_show_error("Control queue full");
-    ui_update_running(gRunning);
-  }
-}
-
-static void on_ui_custom(const SignalConfig& cfg) {
-  CtrlMsg m{};
-  m.type = MSG_SET_CUSTOM;
-  m.payload.cfg = cfg;
-  if (!sendCtrlMsg(m)) {
-    ui_show_error("Control queue full");
-    ui_update_rpm(gCfg.rpm);
-    ui_update_pattern(gPatternIdx);
     ui_update_running(gRunning);
   }
 }
@@ -335,7 +288,6 @@ void managerTask(void*) {
         const uint32_t requested = (uint32_t)m.payload.val;
         const uint32_t clamped = constrain(requested, 100u, 6000u);
 
-#if defined(SIGGEN_BACKEND_TABLE)
         if (gGen.setRpm(clamped)) {
           gCfg.rpm = clamped;
           g_rpm = clamped;
@@ -348,31 +300,15 @@ void managerTask(void*) {
           ui_update_rpm(gCfg.rpm);
           ui_show_error("Invalid RPM");
         }
-#else
-        SignalConfig next = gCfg;
-        next.rpm = clamped;
-        if (gGenInstance.applySignalConfig(next)) {
-          gCfg = next;
-          g_rpm = clamped;
-          NvsStore::setRpmDebounced(clamped);
-          lastGood = gCfg;
-          ui_show_error("");
-          if (clamped != requested) ui_update_rpm(clamped);
-        } else {
-          gCfg = lastGood;
-          ui_update_rpm(gCfg.rpm);
-          ui_show_error("Invalid RPM/config");
-        }
-#endif
         break;
       }
 
       case MSG_SET_PATTERN: {
-        // Legacy SignalConfig-based path. Only used on WROOM (LEGACY backend).
+        // Legacy preset-index path; routed to MSG_SELECT_BUILTIN on the
+        // TABLE backend (5-preset clamp preserved for back-compat callers).
         const uint32_t requested = (uint32_t)m.payload.val;
         const uint8_t idx = (requested > 4u) ? 4u : (uint8_t)requested;
 
-#if defined(SIGGEN_BACKEND_TABLE)
         // Treat as MSG_SELECT_BUILTIN on the TABLE backend.
         const PatternRef* p = PatternLibrary::builtinByIndex(idx);
         if (p && gGen.apply(*p, gCfg.rpm)) {
@@ -392,69 +328,6 @@ void managerTask(void*) {
           ui_update_pattern(gPatternIdx);
           ui_show_error("Pattern apply failed");
         }
-#else
-        const SignalConfig next = patternFromIndex(idx, gCfg.rpm);
-        if (gGenInstance.applySignalConfig(next)) {
-          gCfg = next;
-          gPatternIdx = idx;
-          lastGood = gCfg;
-          lastGoodPattern = gPatternIdx;
-          ui_show_error("");
-          if (idx != requested) ui_update_pattern(idx);
-        } else {
-          gCfg = lastGood;
-          gPatternIdx = lastGoodPattern;
-          ui_update_rpm(gCfg.rpm);
-          ui_update_pattern(gPatternIdx);
-          ui_show_error("Invalid pattern/config");
-        }
-#endif
-        break;
-      }
-
-      case MSG_SET_CUSTOM: {
-        SignalConfig next = m.payload.cfg;
-        next.rpm = constrain(next.rpm, 100u, 6000u);
-
-#if defined(SIGGEN_BACKEND_TABLE)
-        // M5.5: route through DSL compiler to obtain a PatternRef.
-        DslResult r = dslCompileSignalConfig(next);
-        if (r.ok) {
-          if (gGen.apply(r.pattern, next.rpm)) {
-            // The custom-modal compile becomes the new DSL scratch. Free
-            // any previously-owned scratch before publishing this one to
-            // avoid leaking the prior PSRAM table.
-            cleanupScratchDsl();
-            s_scratch_dsl   = r.pattern;
-            s_scratch_active = true;
-            gActivePattern  = nullptr;  // Custom DSL pattern, not in PatternLibrary.
-            gCfg = next;
-            lastGood = gCfg;
-            ui_show_error("");
-            ui_update_rpm(gCfg.rpm);
-          } else {
-            dslFree(r.pattern);
-            ui_show_error(genErrorString(gGen.lastError()));
-            Serial.printf("[main] custom apply failed: %s\n", genErrorString(gGen.lastError()));
-          }
-        } else {
-          char buf[128];
-          snprintf(buf, sizeof(buf), "DSL: %s", r.error);
-          ui_show_error(buf);
-        }
-#else
-        if (gGenInstance.applySignalConfig(next)) {
-          gCfg = next;
-          lastGood = gCfg;
-          ui_show_error("");
-          ui_update_rpm(gCfg.rpm);
-        } else {
-          gCfg = lastGood;
-          ui_update_rpm(gCfg.rpm);
-          ui_update_pattern(gPatternIdx);
-          ui_show_error("Invalid custom config");
-        }
-#endif
         break;
       }
 
@@ -765,7 +638,6 @@ void setup() {
   NvsStore::loadAllToGlobals();
 
   // ---- Generator init ----
-#if defined(SIGGEN_BACKEND_TABLE)
   // ============================================================
   // ====== USER: SELECT BACKEND OUTPUT PINS ====================
   // All three channels — crank + cam1 + cam2 — are driven via the
@@ -788,11 +660,6 @@ void setup() {
     Serial.printf("[boot] generator error: %s\n",
                   genErrorString(gGen.lastError()));
   }
-#else
-  const bool genOk = gGen.begin(PIN_CKP_OUT);
-  Serial.printf("[boot] generator init: %s (crank pin=%d)\n",
-                genOk ? "OK" : "FAILED", (int)PIN_CKP_OUT);
-#endif
   if (!genOk) {
     ui_show_error("Generator init failed");
   }
@@ -808,7 +675,7 @@ void setup() {
   }
 
   const bool uiOk = ui_init(on_ui_rpm, on_ui_pattern, on_ui_run,
-                            on_ui_custom, on_ui_invert);
+                            on_ui_invert);
   if (!uiOk) {
     DBG_PRINTLN("[UI] init failed; running defaults only");
   }
@@ -826,7 +693,6 @@ void setup() {
 
   // ---- Restore last applied pattern from NVS ----
   gCfg.rpm = g_rpm;
-#if defined(SIGGEN_BACKEND_TABLE)
   const PatternRef* p = nullptr;
   if (g_pattern_key[0] != '\0') {
     p = PatternLibrary::findByKey(g_pattern_key);
@@ -850,11 +716,6 @@ void setup() {
   } else {
     ui_show_error("Restore pattern failed");
   }
-#else
-  if (!gGenInstance.applySignalConfig(gCfg)) {
-    ui_show_error("Default config invalid");
-  }
-#endif
 
   // ---- Restore sweep + compression from NVS ----
   {

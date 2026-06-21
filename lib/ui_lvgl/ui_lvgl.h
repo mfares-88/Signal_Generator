@@ -24,14 +24,12 @@
 typedef void (*ui_on_rpm_cb)(uint32_t rpm);
 typedef void (*ui_on_pattern_cb)(uint8_t pattern_index);
 typedef void (*ui_on_run_cb)(bool running);
-typedef void (*ui_on_custom_cb)(const SignalConfig& cfg);
 typedef void (*ui_on_invert_cb)(bool inverted);
 
 // Initialize LVGL and create UI page. Provide callbacks for actions.
 // Returns false if display/touch/LVGL cannot be initialized.
 bool ui_init(ui_on_rpm_cb on_rpm, ui_on_pattern_cb on_pattern,
-             ui_on_run_cb on_run, ui_on_custom_cb on_custom,
-             ui_on_invert_cb on_invert);
+             ui_on_run_cb on_run, ui_on_invert_cb on_invert);
 
 bool ui_is_ready();
 

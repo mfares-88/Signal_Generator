@@ -17,7 +17,6 @@ enum MsgType : uint8_t {
   MSG_SET_PATTERN,
   MSG_START,
   MSG_STOP,
-  MSG_SET_CUSTOM,
   MSG_SET_INVERT,
   MSG_SELECT_BUILTIN,
   MSG_SELECT_NAMED,
@@ -32,7 +31,6 @@ enum MsgType : uint8_t {
 
 union MsgPayload {
   int32_t      val;
-  SignalConfig cfg;
   const char*  name;
   struct {
     const uint8_t* bytes;

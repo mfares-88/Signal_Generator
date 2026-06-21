@@ -326,63 +326,6 @@ DslResult dslCompile(const char* source) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// dslCompileSignalConfig — legacy "custom" modal adapter.
-//
-// Synthesizes the equivalent DSL string from a SignalConfig and feeds it
-// through dslCompile(). NOT a separate code path (§6 Agent D hard rule).
-//
-// Mapping (per implementation_plan.md §M5.5):
-//   SignalConfig { nTeeth, pMiss, nMiss, gapPos, gapLvl } →
-//     "1,C,<kind>,1/2,<nTeeth>[,<runs>]"
-//
-// When pMiss == 0 or nMiss == 0: emit a Symmetric wheel.
-// When pMiss == 1 (one gap per rev) and nMiss > 0: emit a Missing wheel
-//   with runs = "<nTeeth - nMiss>t,<nMiss>m" (gap at END) or
-//                 "<nMiss>m,<nTeeth - nMiss>t" (gap at START).
-// Multi-period gaps (pMiss > 1) are not currently expressible as a single
-// run-list in the DSL we ship; for now we fold them to the equivalent of
-// nMiss × pMiss missing teeth in one block (best-effort parity with the
-// existing slot-machine adapter; full multi-gap support comes in a later
-// DSL grammar revision).
-//
-// gapLvl is honored implicitly: the DSL Missing wheel uses level 0 for
-// gap slots. If gapLvl == true (gap HIGH), the caller's expectation is
-// inverted from the standard convention — we surface that as an error
-// rather than silently emitting an inconsistent waveform.
-// ─────────────────────────────────────────────────────────────────────────────
-
-DslResult dslCompileSignalConfig(const SignalConfig& cfg) {
-  if (cfg.gapLvl) {
-    return makeError("signalconfig: gap HIGH not supported via DSL adapter", 0);
-  }
-  if (cfg.nTeeth == 0) {
-    return makeError("signalconfig: nTeeth must be > 0", 0);
-  }
-
-  char src[128];
-  if (cfg.pMiss == 0 || cfg.nMiss == 0) {
-    // Symmetric.
-    snprintf(src, sizeof(src), "1,C,S,1/2,%u", unsigned(cfg.nTeeth));
-  } else {
-    const uint32_t missing_total = uint32_t(cfg.pMiss) * uint32_t(cfg.nMiss);
-    if (missing_total >= cfg.nTeeth) {
-      return makeError("signalconfig: missing teeth >= total", 0);
-    }
-    const uint32_t present = uint32_t(cfg.nTeeth) - missing_total;
-    if (cfg.gapPos == GAP_AT_END) {
-      snprintf(src, sizeof(src),
-               "1,C,M,1/2,%u,%ut,%um",
-               unsigned(cfg.nTeeth), unsigned(present), unsigned(missing_total));
-    } else {
-      snprintf(src, sizeof(src),
-               "1,C,M,1/2,%u,%um,%ut",
-               unsigned(cfg.nTeeth), unsigned(missing_total), unsigned(present));
-    }
-  }
-  return dslCompile(src);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // dslFree — release a compiled PatternRef.table.
 // ─────────────────────────────────────────────────────────────────────────────
 

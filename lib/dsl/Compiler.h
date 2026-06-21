@@ -8,10 +8,6 @@
 // On success the returned DslResult.pattern owns a PSRAM-allocated byte
 // table (heap_caps_malloc(MALLOC_CAP_SPIRAM)). dslFree() releases it.
 //
-// dslCompileSignalConfig() is a thin shim that synthesizes the equivalent
-// DSL source string from a legacy SignalConfig and feeds it through the
-// normal pipeline — *not* an independent code path (§6 Agent D hard rule).
-//
 // This header re-declares the public API from Dsl.h; the implementation
 // lives in Compiler.cpp.
 

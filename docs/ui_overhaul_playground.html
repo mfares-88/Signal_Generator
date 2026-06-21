@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CKP Signal Generator — UI Fix Playground v3 (480×272)</title>
+<style>
+  :root{
+    --pg-bg:#0a0d14; --pg-panel:#11151f; --pg-line:#222b3a;
+    --pg-text:#e6edf6; --pg-muted:#8b97ad; --pg-accent:#00e5ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--pg-bg); color:var(--pg-text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:grid; grid-template-columns:368px 1fr; min-height:100vh;
+  }
+  .controls{border-right:1px solid var(--pg-line);padding:16px 16px 60px;overflow-y:auto;max-height:100vh}
+  .controls h1{font-size:15px;margin:0 0 2px;letter-spacing:.3px}
+  .controls .sub{font-size:11px;color:var(--pg-muted);margin:0 0 14px;line-height:1.55}
+  .group{margin-bottom:13px;border:1px solid var(--pg-line);border-radius:10px;padding:10px 12px;background:var(--pg-panel)}
+  .group.hl{border-color:var(--pg-accent)}
+  .group > .gh{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--pg-muted);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .group > .gh .edit{color:var(--pg-accent);font-weight:700;letter-spacing:.5px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:7px 0;font-size:12.5px}
+  .row label{color:#c4cedd;flex:1}
+  .row .val{color:var(--pg-accent);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;min-width:52px;text-align:right}
+  input[type=range]{width:118px;accent-color:var(--pg-accent)}
+  input[type=number]{width:62px;background:#0c1018;color:var(--pg-text);border:1px solid var(--pg-line);border-radius:6px;padding:4px 6px;font-size:12px;font-family:ui-monospace,monospace}
+  input[type=color]{width:42px;height:24px;border:1px solid var(--pg-line);border-radius:5px;background:none;padding:0;cursor:pointer}
+  select{background:#0c1018;color:var(--pg-text);border:1px solid var(--pg-line);border-radius:6px;padding:4px 6px;font-size:12px}
+  .presets{display:flex;flex-wrap:wrap;gap:6px}
+  .presets button,.mini{background:#0c1018;color:var(--pg-text);border:1px solid var(--pg-line);border-radius:7px;padding:7px 8px;font-size:11.5px;cursor:pointer;transition:.15s}
+  .presets button:hover,.mini:hover{border-color:var(--pg-accent);color:var(--pg-accent)}
+  .seg{display:flex;flex-wrap:wrap;gap:4px}
+  .seg button{background:#0c1018;color:var(--pg-muted);border:1px solid var(--pg-line);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer}
+  .seg button.on{background:var(--pg-accent);color:#04121a;border-color:var(--pg-accent);font-weight:600}
+  .modeseg{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:4px}
+  .modeseg button{padding:9px 8px;font-size:12px;border-radius:8px;font-weight:600;background:#0c1018;color:var(--pg-muted);border:1px solid var(--pg-line);cursor:pointer}
+  .modeseg button.on{background:var(--pg-accent);color:#04121a;border-color:var(--pg-accent)}
+  .switch{position:relative;width:38px;height:20px;flex:0 0 auto}
+  .switch input{opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+  .switch .tr{position:absolute;inset:0;background:#2a3344;border-radius:20px;transition:.15s;pointer-events:none}
+  .switch .tr::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s}
+  .switch input:checked + .tr{background:var(--pg-accent)}
+  .switch input:checked + .tr::after{transform:translateX(18px)}
+  .btnrow{display:flex;gap:6px;margin-top:8px}
+  .hint{font-size:10.5px;color:var(--pg-muted);line-height:1.5;margin:2px 0 0}
+  .edpanel{display:none}
+  .edpanel.show{display:block}
+  .edgrid{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:7px 8px;align-items:center;font-size:12px}
+  .edgrid span{color:#c4cedd}
+  /* ---------- Preview column ---------- */
+  .stage{display:flex;flex-direction:column;min-width:0;max-height:100vh;overflow:hidden}
+  .stage .pv{flex:1;overflow:auto;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:18px 18px;gap:8px}
+  .reslabel{font-size:12px;color:var(--pg-muted);font-family:ui-monospace,monospace}
+  .reslabel b{color:var(--pg-accent)}
+  .reslabel .tip{color:#c4cedd}
+  .device-scaler{transform-origin:top center}
+  /* ===================== DEVICE (480x272) ===================== */
+  .device{
+    width:480px;height:272px;position:relative;overflow:hidden;
+    border-radius:14px;box-shadow:0 0 0 3px #05070b,0 0 0 11px #0e1118,0 24px 60px rgba(0,0,0,.7);
+    background:var(--bg);
+    --bg:#0B1020;--surface:#141C2E;--surface2:#0F1628;--accent:#00E5FF;--warn:#FFB020;--text:#D7E9FF;--muted:#7C8DB0;
+    --line:rgba(0,229,255,.22);--tabh:44px;--glow:.4;
+    color:var(--text);font-family:system-ui,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;
+  }
+  .screen{position:absolute;left:0;right:0;top:0;display:none}
+  .screen.active{display:block}
+  .device .screen.tabbed{bottom:var(--tabh)}
+  .device .screen.full{bottom:0}
+  /* editable blocks */
+  .blk{position:absolute;box-sizing:border-box}
+  .device[data-edit="1"] .blk{outline:1px dashed rgba(124,141,176,.5);cursor:grab}
+  .device[data-edit="1"] .blk:hover{outline:1px solid var(--accent)}
+  .device[data-edit="1"] .blk.sel{outline:2px solid var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+  .blk .tag{display:none}
+  .device[data-edit="1"] .blk.sel .tag{display:block;position:absolute;top:-15px;left:-2px;font-size:8.5px;letter-spacing:.4px;
+    background:var(--accent);color:#04121a;padding:1px 5px;border-radius:4px 4px 0 0;white-space:nowrap;font-weight:700;z-index:5}
+  .handle{display:none;position:absolute;right:-5px;bottom:-5px;width:12px;height:12px;border-radius:3px;background:var(--accent);
+    border:2px solid var(--bg);cursor:nwse-resize;z-index:6}
+  .device[data-edit="1"] .blk.sel .handle{display:block}
+  .device[data-edit="1"] .blk *{pointer-events:none}
+  .device[data-edit="1"] .blk.sel .handle{pointer-events:auto}
+  /* header / titles */
+  .title{letter-spacing:2px;color:var(--text);font-weight:600;line-height:1.1;display:flex;align-items:center;height:100%}
+  .leds{display:flex;gap:7px;align-items:center;justify-content:flex-end;height:100%}
+  .led{width:13px;height:13px;border-radius:50%}
+  .led.on{background:var(--accent);box-shadow:0 0 calc(var(--glow)*16px) var(--accent)}
+  .led.off{background:#37425A}
+  .pagebar{display:flex;align-items:center;gap:8px;height:100%}
+  .back{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--accent);border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:var(--surface2);height:34px;align-self:center}
+  .ptitle{letter-spacing:2px;font-weight:600;display:flex;align-items:center}
+  .legend{font-size:9px;color:var(--muted);letter-spacing:.5px;display:flex;align-items:center;height:100%}
+  .hint-lbl{font-size:10px;color:var(--muted);letter-spacing:.4px;display:flex;align-items:center;justify-content:center;height:100%;font-style:italic}
+  /* buttons */
+  .btn{width:100%;height:100%;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:6px;
+    font-weight:600;letter-spacing:.6px;border:1px solid var(--line);
+    background:linear-gradient(180deg,var(--surface),var(--surface2));color:var(--text);user-select:none}
+  .btn.accent{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 26%,var(--surface)),var(--surface2));
+    border-color:var(--accent);box-shadow:0 0 calc(var(--glow)*16px) color-mix(in srgb,var(--accent) 35%,transparent)}
+  .btn.warn{border-color:var(--warn);color:var(--warn)}
+  .device[data-bstyle="outline"] .btn{background:transparent}
+  /* dropdown / input */
+  .dd,.input{width:100%;height:100%;border-radius:10px;border:1px solid var(--line);background:var(--surface2);
+    color:var(--text);display:flex;align-items:center;padding:0 12px;font-size:13px}
+  .dd{justify-content:space-between}
+  .dd .car{color:var(--accent)}
+  .input.ph{color:var(--muted)}
+  .lblcap{font-size:9px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;position:absolute;top:-12px;left:2px}
+  /* run row */
+  .runrow{display:flex;gap:8px;width:100%;height:100%}
+  .runrow .btn{flex:1}
+  .complbl{font-size:9px;color:var(--muted);letter-spacing:1px;text-align:right;margin-bottom:2px}
+  /* arc */
+  .arc{display:flex;align-items:center;justify-content:center}
+  .arc svg{width:100%;height:100%;display:block;overflow:visible}
+  .abg{fill:none;stroke:#1B2438;stroke-linecap:round}
+  .aind{fill:none;stroke:var(--accent);stroke-linecap:round;filter:drop-shadow(0 0 calc(var(--glow)*8px) var(--accent))}
+  .actr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+  .actr .av{font-weight:700;color:var(--accent);line-height:1;letter-spacing:.5px}
+  .actr .ac{color:var(--muted);letter-spacing:2px;line-height:1.4}
+  .actr .ad{font-size:8px;letter-spacing:1px;margin-top:2px;font-weight:700}
+  .actr .ad.up{color:#2BE39B}.actr .ad.dn{color:#FF6B81}
+  .opill{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);font-size:8px;letter-spacing:1px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);color:var(--muted);background:var(--bg)}
+  .opill.live{color:#04121a;background:var(--accent);border-color:var(--accent);font-weight:700}
+  /* rows panel (forms) */
+  .rows{display:flex;flex-direction:column;height:100%;justify-content:center}
+  .frow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:0 0 auto}
+  .frow .fl{font-size:11px;color:var(--muted);flex:0 0 auto}
+  .frow.lj{justify-content:flex-start;gap:10px}
+  .stepper{display:flex;align-items:center;gap:5px}
+  .stepper .sb{width:26px;height:26px;border-radius:7px;border:1px solid var(--line);background:var(--surface2);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:15px}
+  .sv{min-width:62px;height:28px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-family:ui-monospace,monospace;font-size:12.5px;color:var(--text)}
+  .device[data-edit="0"] .sv{cursor:pointer}
+  .device[data-edit="0"] .blk .sv{pointer-events:auto}
+  .sv.glow{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
+  .ddmini{height:28px;border:1px solid var(--line);border-radius:7px;background:var(--surface2);display:flex;align-items:center;justify-content:space-between;padding:0 8px;min-width:120px;font-size:12px}
+  /* generated sub-component blocks (label + control are independent) */
+  .bl-lbl{color:var(--muted);letter-spacing:.3px;display:flex;align-items:center;height:100%;width:100%;overflow:hidden;white-space:nowrap}
+  .genlbl,.genctl{display:flex;align-items:center}
+  .genctl .sv,.genctl .ddmini{flex:1;width:auto;min-width:0;height:100%}
+  .genctl .switch{flex:0 0 auto}
+  /* text areas */
+  .ta{width:100%;height:100%;border:1px solid var(--line);border-radius:10px;background:var(--surface2);padding:9px;font-family:ui-monospace,monospace;font-size:11.5px;color:var(--text);overflow:auto;white-space:pre-wrap;line-height:1.45}
+  .errline{font-size:10px;color:#2BE39B;display:flex;align-items:center;height:100%}
+  .btnsrow{display:flex;gap:8px;width:100%;height:100%}
+  .btnsrow .btn{flex:1;font-size:11px}
+  /* advanced list */
+  .advlist{display:flex;flex-direction:column;gap:8px;height:100%;overflow-y:auto;padding-right:2px}
+  .lrow{flex:0 0 auto;display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;
+    background:linear-gradient(160deg,var(--surface),var(--surface2));padding:0 12px;height:38px;transition:.12s}
+  .device[data-edit="0"] .lrow{cursor:pointer}
+  .device[data-edit="0"] .blk .lrow{pointer-events:auto}
+  .lrow:hover{border-color:var(--accent)}
+  .lrow .lic{font-size:17px;color:var(--accent);width:24px;text-align:center;flex:0 0 auto}
+  .lrow .lname{font-size:12px;font-weight:600;letter-spacing:.6px;flex:0 0 120px}
+  .lrow .ldesc{font-size:10px;color:var(--muted);letter-spacing:.3px;flex:1;text-align:right}
+  /* tab bar */
+  .tabbar{position:absolute;left:0;right:0;bottom:0;height:var(--tabh);display:flex;border-top:1px solid var(--line);background:var(--surface2)}
+  .tabbar .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;letter-spacing:.8px;color:var(--muted);cursor:pointer}
+  .tabbar .tab .ti{font-size:15px;line-height:1}
+  .tabbar .tab.on{color:var(--accent)}
+  .tabbar .tab.on .ti{filter:drop-shadow(0 0 calc(var(--glow)*8px) var(--accent))}
+  .device[data-tabs="0"] .tabbar{display:none}
+  .device[data-edit="1"] .tabbar,.device[data-edit="1"] .back,.device[data-edit="1"] .lrow{pointer-events:none}
+  /* ---------- POPUPS over device ---------- */
+  .pop{position:absolute;inset:0;display:none;z-index:30}
+  .pop.show{display:block}
+  .pop .scrim{position:absolute;inset:0;background:rgba(3,6,12,.55)}
+  /* numeric keypad */
+  .keypad{position:absolute;right:8px;top:8px;bottom:8px;width:228px;background:var(--surface);border:1px solid var(--accent);
+    border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.6);display:flex;flex-direction:column;padding:8px;gap:6px}
+  .kp-head{font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;display:flex;justify-content:space-between}
+  .kp-disp{height:38px;border:1px solid var(--line);border-radius:8px;background:var(--surface2);display:flex;align-items:center;
+    justify-content:flex-end;padding:0 12px;font-family:ui-monospace,monospace;font-size:20px;color:var(--accent);font-weight:700}
+  .kp-grid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:5px}
+  .kp-grid .k{display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:8px;background:var(--surface2);
+    color:var(--text);font-size:17px;font-weight:600;cursor:pointer;user-select:none}
+  .kp-grid .k:active{background:var(--accent);color:#04121a}
+  .kp-grid .k.fn{color:var(--muted);font-size:13px}
+  .kp-foot{display:grid;grid-template-columns:1fr 1fr;gap:6px;height:38px}
+  .kp-foot .kb{display:flex;align-items:center;justify-content:center;border-radius:8px;font-weight:700;font-size:13px;letter-spacing:.6px;cursor:pointer}
+  .kp-foot .back{background:var(--surface2);border:1px solid var(--line);color:var(--text)}
+  .kp-foot .ok{background:var(--accent);color:#04121a;border:1px solid var(--accent)}
+  /* qwerty keyboard */
+  .kbd{position:absolute;left:0;right:0;bottom:0;height:128px;background:var(--surface);border-top:1px solid var(--accent);
+    padding:7px;display:flex;flex-direction:column;gap:5px}
+  .kbd .kr{display:flex;gap:4px;justify-content:center;flex:1}
+  .kbd .kk{flex:1;max-width:42px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:6px;
+    background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer}
+  .kbd .kk.wide{max-width:90px;color:var(--accent)}
+  .kbd .kk:active{background:var(--accent);color:#04121a}
+  .kbd-cap{position:absolute;left:8px;top:6px;font-size:9px;color:var(--muted);letter-spacing:1px}
+  /* simple dropdown menu */
+  .menu{position:absolute;background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:4px;min-width:130px;box-shadow:0 8px 24px rgba(0,0,0,.6)}
+  .menu .mi{padding:8px 10px;font-size:12px;border-radius:6px;cursor:pointer;color:var(--text)}
+  .menu .mi:hover{background:var(--surface2)}
+  .menu .mi.on{color:var(--accent)}
+  /* help overlay (scrollable) */
+  .helpg{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;padding:10px}
+  .helpbar{display:flex;align-items:center;gap:8px;height:34px;flex:0 0 auto;margin-bottom:8px}
+  .helptxt{flex:1;border:1px solid var(--line);border-radius:10px;background:var(--surface2);padding:10px 12px;overflow-y:auto;
+    font-family:ui-monospace,monospace;font-size:11px;line-height:1.5;color:var(--text);white-space:pre-wrap}
+  .helptxt::-webkit-scrollbar{width:8px}.helptxt::-webkit-scrollbar-thumb{background:var(--accent);border-radius:4px}
+  .scrollnote{position:absolute;right:16px;top:48px;font-size:8px;color:var(--accent);writing-mode:vertical-rl;letter-spacing:1px;opacity:.6}
+  /* prompt */
+  .promptbox{flex:0 0 auto;border-top:1px solid var(--pg-line);background:var(--pg-panel);padding:13px 18px}
+  .promptbox .ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .promptbox .ph span{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--pg-muted)}
+  .promptbox .ph button{background:var(--pg-accent);color:#04121a;border:none;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer}
+  #prompt{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.55;color:#cdd7e6;white-space:pre-wrap;max-height:210px;overflow:auto;margin:0}
+  /* per-block manual show/hide (DES-5a) — edit mode forces visible via specificity */
+  .blk.hidden{display:none}
+  .device[data-edit="1"] .blk.hidden{display:block;opacity:.4}
+  /* ---------- stepped guided builder (CUSTOM tab) ---------- */
+  .stepstrip{display:flex;align-items:center;gap:4px;height:100%;width:100%;overflow:hidden}
+  .stepstrip .st{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;height:22px;border:1px solid var(--line);
+    border-radius:7px;background:var(--surface2);color:var(--muted);font-size:9px;letter-spacing:.4px;white-space:nowrap}
+  .stepstrip .st .sn{width:14px;height:14px;border-radius:50%;background:var(--surface);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+  .stepstrip .st.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--surface2))}
+  .stepstrip .st.on .sn{background:var(--accent);color:#04121a;border-color:var(--accent)}
+  .stepstrip .st.done{color:var(--text)}
+  .stepstrip .st.done .sn{background:color-mix(in srgb,var(--accent) 40%,var(--surface));color:#04121a}
+  .cb-scroll{height:100%;width:100%;overflow-y:auto;padding-right:3px;display:flex;flex-direction:column;gap:7px}
+  .cb-scroll::-webkit-scrollbar{width:7px}.cb-scroll::-webkit-scrollbar-thumb{background:var(--accent);border-radius:4px}
+  .cb-sect{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:1px 0 -2px}
+  .cb-card{border:1px solid var(--line);border-radius:9px;background:var(--surface2);padding:8px 9px;display:flex;flex-direction:column;gap:6px}
+  .cb-line{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px}
+  .cb-line .l{color:var(--muted);flex:0 0 auto}
+  .cb-chip{font-size:9px;letter-spacing:.6px;padding:2px 7px;border-radius:9px;border:1px solid var(--line);
+    background:var(--surface);color:var(--accent);white-space:nowrap}
+  .cb-seg{display:flex;gap:4px}
+  .cb-seg .sb{flex:1;text-align:center;padding:5px 4px;border:1px solid var(--line);border-radius:7px;background:var(--surface);
+    color:var(--muted);font-size:10px;cursor:pointer;user-select:none}
+  .cb-seg .sb.on{background:var(--accent);color:#04121a;border-color:var(--accent);font-weight:700}
+  .cb-num{width:54px;height:26px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--text);
+    text-align:center;font-family:ui-monospace,monospace;font-size:12px;padding:0 4px}
+  .cb-num.bad{border-color:#FF6B81;color:#FF6B81}
+  .cb-frac{display:flex;align-items:center;gap:3px}
+  .cb-frac .sl{color:var(--muted)}
+  .cb-led{font-size:10px;display:flex;align-items:center;gap:6px}
+  .cb-led .ok{color:#2BE39B}.cb-led .err{color:#FF6B81}
+  .cb-rows{display:flex;flex-direction:column;gap:5px}
+  .cb-rrow{display:flex;align-items:center;gap:6px;font-size:11px}
+  .cb-rrow .cb-num{width:48px}
+  .cb-rrow .rx{width:24px;height:24px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:#FF6B81;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;flex:0 0 auto}
+  .cb-rrow .seg2{display:flex;gap:3px;flex:0 0 auto}
+  .cb-rrow .seg2 .sb{padding:4px 8px;font-size:10px}
+  .cb-rrow .deglbl{font-size:9px;letter-spacing:.4px;flex:1}
+  .cb-rrow .deglbl.hi{color:var(--accent)}.cb-rrow .deglbl.lo{color:var(--muted)}
+  .cb-addrow{align-self:flex-start;border:1px dashed var(--line);border-radius:7px;background:transparent;color:var(--accent);
+    font-size:10px;padding:4px 10px;cursor:pointer}
+  .cb-dsl{border:1px solid var(--accent);border-radius:8px;background:var(--bg);color:var(--accent);font-family:ui-monospace,monospace;
+    font-size:11px;padding:7px 9px;word-break:break-all;line-height:1.5}
+  .cb-readout{font-size:10px;color:var(--muted);font-family:ui-monospace,monospace}
+  .cb-readout b{color:var(--accent)}
+  .cb-status{font-size:10.5px;border-radius:7px;padding:6px 8px;border:1px solid var(--line);background:var(--surface)}
+  .cb-status.ok{color:#2BE39B;border-color:color-mix(in srgb,#2BE39B 50%,var(--line))}
+  .cb-status.err{color:#FF6B81;border-color:color-mix(in srgb,#FF6B81 50%,var(--line))}
+  .cb-recap{font-size:10.5px;color:var(--text);line-height:1.6}
+  .cb-recap .k{color:var(--muted)}
+  .cb-navbar{display:flex;gap:8px;width:100%;height:100%}
+  .cb-navbar .btn{flex:1;font-size:12px}
+  /* builder controls are interactive in Interact mode (blocks disable children in Edit mode) */
+  .device[data-edit="0"] .blk .cb-num,.device[data-edit="0"] .blk .cb-seg .sb,
+  .device[data-edit="0"] .blk .seg2 .sb,.device[data-edit="0"] .blk .rx,
+  .device[data-edit="0"] .blk .cb-addrow,.device[data-edit="0"] .blk .switch input,
+  .device[data-edit="0"] .blk .stepstrip .st,.device[data-edit="0"] .blk .cb-scroll{pointer-events:auto}
+  .wfwrap{display:flex;flex-direction:column;gap:3px}
+  canvas.wf{width:100%;height:96px;display:block;border:1px solid var(--line);border-radius:8px;background:var(--surface2)}
+</style>
+</head>
+<body>
+  <aside class="controls">
+    <h1>UI Fix Playground <span style="color:var(--pg-accent)">v3</span></h1>
+    <p class="sub">Guiton JC4827W543 · <b>480×272</b> · finger touch. Two modes:
+       <b style="color:var(--pg-accent)">Edit layout</b> = drag/resize blocks &amp; set fonts;
+       <b style="color:var(--pg-accent)">Interact</b> = click fields to pop the <b>keypad</b>/keyboard &amp; watch the live RPM arc.
+       Everything you change is written into the brief below.</p>
+
+    <div class="group hl">
+      <div class="gh">Mode</div>
+      <div class="modeseg" id="modeseg">
+        <button data-mode="edit" class="on">✎ Edit layout</button>
+        <button data-mode="live">☞ Interact</button>
+      </div>
+      <p class="hint" id="modehint">Every piece is independent — each form <b>label</b>, each <b>value box / dropdown / switch</b>, and each <b>button</b> is its own block. Drag to move, drag the corner to resize, set its font below. Every change is pushed to the brief.</p>
+    </div>
+
+    <div class="group">
+      <div class="gh">Go to screen</div>
+      <div class="seg" id="nav" style="margin-bottom:6px"></div>
+      <div class="row"><label>Advanced layout</label>
+        <div class="seg" id="advseg"><button data-adv="list" class="on">List</button><button data-adv="grid">Grid</button></div></div>
+    </div>
+
+    <div class="group hl" id="edgroup">
+      <div class="gh">Selected component <span class="edit" id="selname">—</span></div>
+      <div class="edpanel" id="edpanel">
+        <div class="edgrid">
+          <span>X</span><input type="number" id="ed_x"><span>Y</span><input type="number" id="ed_y">
+          <span>W</span><input type="number" id="ed_w"><span>H</span><input type="number" id="ed_h">
+        </div>
+        <div class="row" style="margin-top:9px"><label>Font size</label>
+          <input type="range" id="ed_fs" min="8" max="34" step="1"><span class="val" id="ed_fs_v">—</span></div>
+        <!-- DES-5: NEW edit-panel controls (visibility + rename) -->
+        <div class="row"><label>Visible <span class="legend">(NEW)</span></label>
+          <span class="switch"><input type="checkbox" id="ed_vis"><span class="tr"></span></span></div>
+        <p class="hint" id="ed_vishint" style="margin-top:0">Hide this block on-device. Stays selectable in Edit mode.</p>
+        <div class="row"><label>Label text <span class="legend">(NEW)</span></label>
+          <input type="text" id="ed_label" placeholder="(default)" style="width:130px;background:#0c1018;color:var(--pg-text);border:1px solid var(--pg-line);border-radius:6px;padding:4px 6px;font-size:12px"></div>
+        <div class="btnrow"><button class="mini" id="ed_reset" style="flex:1">Reset this component</button></div>
+      </div>
+      <p class="hint" id="ednone">Click a block on the screen to select it. (Edit mode only.)</p>
+    </div>
+
+    <div class="group hl">
+      <div class="gh">Live RPM arc <span class="legend">(Findings 2 &amp; 6)</span></div>
+      <div class="row"><label>Output active (animate)</label><span class="switch"><input type="checkbox" id="outact"><span class="tr"></span></span></div>
+      <p class="hint">On <b>Sweep</b> the arc ramps Low↔High by the selected Mode; on <b>Compression</b> it shows the threshold-gated firing dips. Turn this on, then open the Sweep or Compression page to watch the arc move.</p>
+      <div class="row"><label>Idle / held RPM</label><input type="range" id="rpm" min="100" max="6000" step="50" value="1000"><span class="val" id="rpm_v"></span></div>
+      <div class="row"><label>Sweep Mode</label>
+        <select id="sweepmode"><option>OFF</option><option selected>LINEAR</option><option>LOG</option><option>WAYPOINT</option></select></div>
+    </div>
+
+    <div class="group">
+      <div class="gh">Per-page layout</div>
+      <div class="row"><label>Editing page</label><span class="val" id="curpage">SWEEP</span></div>
+      <div class="btnrow"><button class="mini" id="resetpage" style="flex:1">Reset page layout</button>
+        <button class="mini" id="resetall" style="flex:1">Reset ALL pages</button></div>
+      <p class="hint">Resets restore the recommended baseline (the fixes pre-applied), not the original buggy layout.</p>
+    </div>
+
+    <div class="group">
+      <div class="gh">Theme presets <span class="legend">(palette = global)</span></div>
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <div class="group">
+      <div class="gh">Global theme</div>
+      <div class="row"><label>Background</label><input type="color" data-var="bg" value="#0B1020"></div>
+      <div class="row"><label>Surface / cards</label><input type="color" data-var="surface" value="#141C2E"></div>
+      <div class="row"><label>Sunken / inputs</label><input type="color" data-var="surface2" value="#0F1628"></div>
+      <div class="row"><label>Accent</label><input type="color" data-var="accent" value="#00E5FF"></div>
+      <div class="row"><label>Warn / invert</label><input type="color" data-var="warn" value="#FFB020"></div>
+      <div class="row"><label>Text</label><input type="color" data-var="text" value="#D7E9FF"></div>
+      <div class="row"><label>Muted text</label><input type="color" data-var="muted" value="#7C8DB0"></div>
+      <div class="row"><label>Accent glow</label><span class="switch"><input type="checkbox" id="glow" checked><span class="tr"></span></span></div>
+      <div class="row"><label>Button style</label><select id="bstyle"><option value="filled">Filled</option><option value="outline">Outline</option></select></div>
+      <div class="row"><label>Preview zoom</label><input type="range" id="zoom" min="1" max="2.2" step="0.05" value="1.7"><span class="val" id="zoom_v"></span></div>
+    </div>
+  </aside>
+
+  <main class="stage">
+    <div class="pv">
+      <div class="reslabel">Live mock — <b>480 × 272 px</b> at <span id="zlab">1.7×</span> &nbsp; <span class="tip" id="modetip"></span></div>
+      <div class="device-scaler" id="scaler">
+        <div class="device" id="device" data-tabs="1" data-adv="list" data-bstyle="filled" data-edit="1">
+
+          <!-- ================= HOME ================= -->
+          <section class="screen tabbed active" id="s-home">
+            <div class="blk" data-bid="home.title"><div class="title">CKP SIGNAL</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="home.leds"><div class="leds"><span class="led on"></span><span class="led off"></span><span class="led off"></span></div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk arc" data-bid="home.arc" data-arc="home"><svg viewBox="0 0 100 100"><path class="abg"></path><path class="aind"></path></svg><div class="actr"><div class="av">1000</div><div class="ac">RPM</div></div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="home.pattern"><div class="lblcap">Pattern</div><div class="dd" data-menu="pattern">60-2 crank<span class="car">▾</span></div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="home.filter"><div class="input ph" data-kbd="filter">⌕ filter patterns…</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="home.comp"><div class="complbl">COMP</div><span class="switch"><input type="checkbox"><span class="tr"></span></span><span class="tag"></span><div class="handle"></div></div>
+            <!-- home.invert + home.start generated -->
+          </section>
+
+          <!-- ================= ADVANCED ================= -->
+          <section class="screen tabbed" id="s-adv">
+            <div class="blk" data-bid="adv.title"><div class="title">ADVANCED</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="adv.legend"><div class="legend">configuration &amp; tools</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="adv.list">
+              <div class="advlist" id="advbody"></div>
+              <span class="tag"></span><div class="handle"></div>
+            </div>
+          </section>
+
+          <!-- ================= SWEEP ================= -->
+          <section class="screen full" id="s-sweep">
+            <div class="blk" data-bid="sweep.header"><div class="pagebar"><div class="back" data-act="back">‹ Back</div><div class="ptitle">SWEEP</div></div><span class="tag"></span><div class="handle"></div></div>
+            <!-- sweep form rows generated -->
+            <div class="blk arc" data-bid="sweep.arc" data-arc="sweep"><svg viewBox="0 0 100 100"><path class="abg"></path><path class="aind"></path></svg><div class="actr"><div class="av">1000</div><div class="ac">RPM</div><div class="ad"></div></div><div class="opill">OFF</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="sweep.stop"><div class="btn">STOP</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="sweep.apply"><div class="btn accent">APPLY</div><span class="tag"></span><div class="handle"></div></div>
+          </section>
+
+          <!-- ================= COMPRESSION ================= -->
+          <section class="screen full" id="s-comp">
+            <div class="blk" data-bid="comp.header"><div class="pagebar"><div class="back" data-act="back">‹ Back</div><div class="ptitle">COMPRESSION</div></div><span class="tag"></span><div class="handle"></div></div>
+            <!-- comp form rows generated -->
+            <div class="blk arc" data-bid="comp.arc" data-arc="comp"><svg viewBox="0 0 100 100"><path class="abg"></path><path class="aind"></path></svg><div class="actr"><div class="av">1000</div><div class="ac">RPM</div><div class="ad"></div></div><div class="opill">OFF</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="comp.stop"><div class="btn">STOP</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="comp.apply"><div class="btn accent">APPLY</div><span class="tag"></span><div class="handle"></div></div>
+          </section>
+
+          <!-- ================= DSL EDITOR ================= -->
+          <section class="screen full" id="s-dsl">
+            <div class="blk" data-bid="dsl.header"><div class="pagebar"><div class="back" data-act="back">‹ Back</div><div class="ptitle">DSL EDITOR</div></div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="dsl.help"><div class="btn" data-act="help">HELP</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="dsl.editor"><div class="ta" data-kbd="dsl">1,C,M,1/2,60,58t,2m : 2,c,S,1/2,1</div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="dsl.err"><div class="errline">OK — compiled 120 slots</div><span class="tag"></span><div class="handle"></div></div>
+            <!-- dsl button row generated -->
+          </section>
+
+          <!-- ============ CUSTOM (stepped guided DSL builder) ============ -->
+          <!-- TARGET state: this top-level CUSTOM tab subsumes BOTH the removed -->
+          <!-- legacy timer-based "Custom Pattern" modal AND the raw DSL editor.  -->
+          <!-- Firmware THIS cycle keeps the raw DSL editor as the interim entry  -->
+          <!-- point; this mockup depicts the final stepped-builder state.        -->
+          <section class="screen tabbed" id="s-custom-build">
+            <div class="blk" data-bid="cb.steps"><div class="stepstrip" id="cb-stepstrip"></div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="cb.body"><div class="cb-scroll" id="cb-body"></div><span class="tag"></span><div class="handle"></div></div>
+            <div class="blk" data-bid="cb.nav"><div class="cb-navbar"><div class="btn" data-act="cb-prev">‹ BACK</div><div class="btn accent" data-act="cb-next">NEXT ›</div></div><span class="tag"></span><div class="handle"></div></div>
+          </section>
+
+          <nav class="tabbar" id="tabbar">
+            <div class="tab on" data-tab="home"><span class="ti">⌂</span>HOME</div>
+            <div class="tab" data-tab="custom"><span class="ti">✎</span>CUSTOM</div>
+            <div class="tab" data-tab="adv"><span class="ti">⚙</span>ADVANCED</div>
+          </nav>
+
+          <!-- ============ POPUPS ============ -->
+          <div class="pop" id="pop-keypad"><div class="scrim" data-act="kp-back"></div>
+            <div class="keypad">
+              <div class="kp-head"><span id="kp-label">VALUE</span><span id="kp-range"></span></div>
+              <div class="kp-disp" id="kp-disp">0</div>
+              <div class="kp-grid" id="kp-grid"></div>
+              <div class="kp-foot"><div class="kb back" data-act="kp-back">‹ BACK</div><div class="kb ok" data-act="kp-ok">OK ✓</div></div>
+            </div>
+          </div>
+
+          <div class="pop" id="pop-kbd"><div class="scrim" data-act="kbd-close"></div>
+            <div class="kbd" id="kbd">
+              <span class="kbd-cap" id="kbd-cap">on-screen keyboard</span>
+            </div>
+          </div>
+
+          <div class="pop" id="pop-menu"><div class="scrim" data-act="menu-close"></div>
+            <div class="menu" id="menu"></div>
+          </div>
+
+          <div class="pop" id="pop-help"><div class="scrim" data-act="help-close"></div>
+            <div class="helpg">
+              <div class="helpbar"><div class="back" data-act="help-close">‹ Back</div><div class="ptitle" style="font-size:15px">DSL HELP</div></div>
+              <div class="helptxt" id="helptxt"></div>
+              <div class="scrollnote">▲ scroll ▼</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="promptbox">
+      <div class="ph"><span>Fix brief → paste back to Claude to implement on the codebase</span><button id="copy">Copy brief</button></div>
+      <pre id="prompt"></pre>
+    </div>
+  </main>
+
+<script>
+/* ============================================================
+   CKP Signal Generator — UI Fix Playground v3
+   Editing platform + animated arcs + keypad/keyboard mockups
+   ============================================================ */
+
+/* ---- block metadata: friendly name + LVGL anchor hint ---- */
+const BLOCKS = {
+  // HOME
+  'home.title':  {page:'home', name:'Title "CKP SIGNAL"',           lvgl:'lbl title'},
+  'home.leds':   {page:'home', name:'Channel LEDs',                 lvgl:'led row'},
+  'home.arc':    {page:'home', name:'RPM arc gauge',                lvgl:'arc_rpm'},
+  'home.pattern':{page:'home', name:'Pattern dropdown',             lvgl:'dd_pattern'},
+  'home.filter': {page:'home', name:'Fuzzy filter textbox',         lvgl:'ta_pattern_filter'},
+  'home.comp':   {page:'home', name:'COMP toggle',                  lvgl:'sw_home_comp'},
+  // ADVANCED
+  'adv.title':   {page:'adv', name:'Title "ADVANCED"',              lvgl:'lbl title'},
+  'adv.legend':  {page:'adv', name:'Legend caption',                lvgl:'caption'},
+  'adv.list':    {page:'adv', name:'Tool list (5 rows)',            lvgl:'scrollable list'},
+  // SWEEP
+  'sweep.header':{page:'sweep', name:'Back + title header',         lvgl:'make_back_header'},
+  'sweep.arc':   {page:'sweep', name:'Live RPM arc',                lvgl:'arc_sweep_live @ RIGHT_MID'},
+  'sweep.stop':  {page:'sweep', name:'STOP button',                 lvgl:'btnStop @ BOTTOM_LEFT (0,0) 100×40'},
+  'sweep.apply': {page:'sweep', name:'APPLY button',                lvgl:'btnApply @ BOTTOM_LEFT (110,0) 100×40'},
+  // COMP
+  'comp.header': {page:'comp', name:'Back + title header',          lvgl:'make_back_header'},
+  'comp.arc':    {page:'comp', name:'Live RPM arc',                 lvgl:'arc_comp_live @ RIGHT_MID'},
+  'comp.stop':   {page:'comp', name:'STOP button',                  lvgl:'btnStop @ BOTTOM_LEFT 100×40'},
+  'comp.apply':  {page:'comp', name:'APPLY button',                 lvgl:'btnApply @ BOTTOM_LEFT 100×40'},
+  // DSL
+  'dsl.header':  {page:'dsl', name:'Back + title header',           lvgl:'make_back_header'},
+  'dsl.help':    {page:'dsl', name:'HELP button',                   lvgl:'btnHelp @ TOP_RIGHT 72×40'},
+  'dsl.editor':  {page:'dsl', name:'DSL source textarea',           lvgl:'ta_dsl_src'},
+  'dsl.err':     {page:'dsl', name:'Compile status line',           lvgl:'lbl_dsl_err'},
+  // CUSTOM (stepped guided builder — TARGET)
+  'cb.steps':    {page:'custom', name:'Step-strip 1>2>3>4>5',       lvgl:'step indicator'},
+  'cb.body':     {page:'custom', name:'Step body (scrollable)',     lvgl:'lv_obj scroll container'},
+  'cb.nav':      {page:'custom', name:'Back / Next bar',            lvgl:'nav button row'},
+};
+
+/* ---- recommended baseline layout (the fixes pre-applied) ----
+   coords in device px (480×272), measured from each screen's top-left. */
+const DEFAULTS = {
+  // HOME
+  'home.title':  {x:14,  y:10,  w:210, h:30,  fs:20},
+  'home.leds':   {x:380, y:12,  w:86,  h:22,  fs:13},
+  'home.arc':    {x:14,  y:44,  w:178, h:178, fs:30},
+  'home.pattern':{x:206, y:54,  w:260, h:40,  fs:13},
+  'home.filter': {x:206, y:102, w:260, h:36,  fs:13},
+  'home.comp':   {x:362, y:148, w:104, h:30,  fs:13},
+  // ADVANCED
+  'adv.title':   {x:14,  y:10,  w:200, h:28,  fs:18},
+  'adv.legend':  {x:300, y:14,  w:166, h:20,  fs:9},
+  'adv.list':    {x:10,  y:46,  w:460, h:176, fs:12},
+  // SWEEP  (Finding 5: tidy buttons; Finding 6: big arc)
+  'sweep.header':{x:14,  y:10,  w:320, h:34,  fs:18},
+  'sweep.arc':   {x:300, y:54,  w:164, h:164, fs:30},
+  'sweep.stop':  {x:14,  y:224, w:120, h:40,  fs:13},
+  'sweep.apply': {x:178, y:224, w:120, h:40,  fs:13},
+  // COMP
+  'comp.header': {x:14,  y:10,  w:320, h:34,  fs:18},
+  'comp.arc':    {x:300, y:52,  w:160, h:160, fs:28},
+  'comp.stop':   {x:14,  y:224, w:120, h:40,  fs:13},
+  'comp.apply':  {x:178, y:224, w:120, h:40,  fs:13},
+  // DSL  (Finding 7.1: arc removed, editor full-width)
+  'dsl.header':  {x:14,  y:10,  w:200, h:34,  fs:18},
+  'dsl.help':    {x:392, y:10,  w:74,  h:40,  fs:13},
+  'dsl.editor':  {x:14,  y:52,  w:452, h:150, fs:12},
+  'dsl.err':     {x:14,  y:206, w:300, h:16,  fs:10},
+  // CUSTOM (stepped builder — fits inside the ~228px tabbed area)
+  'cb.steps':    {x:6,   y:4,   w:468, h:24,  fs:10},
+  'cb.body':     {x:6,   y:32,  w:468, h:152, fs:11},
+  'cb.nav':      {x:6,   y:188, w:468, h:34,  fs:12},
+};
+
+/* numeric fields: [label, value, min, max] */
+const FIELDS = {
+  'sweep.low':  ['Low RPM',        800,  100, 6000],
+  'sweep.high': ['High RPM',       4500, 100, 6000],
+  'sweep.iv':   ['Interval µs',    1000, 100, 100000],
+  'comp.cyl':   ['Cylinders',      4,    1,   12],
+  'comp.thr':   ['RPM Threshold',  1200, 100, 6000],
+  'comp.peak':  ['Peak',           180,  0,   255],
+};
+
+const SCREENS = ['home','adv','sweep','comp','dsl','wave','custom'].filter(s=>s!=='wave');
+const PAGES   = ['home','adv','sweep','comp','dsl','custom'];
+const LABEL = {home:'HOME',adv:'ADVANCED',sweep:'SWEEP',comp:'COMPRESSION',dsl:'DSL',custom:'CUSTOM'};
+const SMAP  = {home:'s-home',adv:'s-adv',sweep:'s-sweep',comp:'s-comp',dsl:'s-dsl',custom:'s-custom-build'};
+
+/* ---- sub-component generation: each form row's LABEL and CONTROL are
+        independent draggable/resizable blocks; button bars split per button. ---- */
+const GEN_BUTTONS = [
+  {bid:'home.invert', screen:'s-home', name:'INVERT button',  lvgl:'btn_invert', cls:' warn',   label:'INVERT OFF', def:{x:206,y:182,w:126,h:42,fs:13}},
+  {bid:'home.start',  screen:'s-home', name:'START button',   lvgl:'btn_run',    cls:' accent', label:'▶ START', act:'start', def:{x:340,y:182,w:126,h:42,fs:13}},
+  {bid:'dsl.compile', screen:'s-dsl',  name:'COMPILE button', lvgl:'btnCompile', cls:'',        label:'COMPILE', def:{x:14, y:226,w:108,h:34,fs:11}},
+  {bid:'dsl.save',    screen:'s-dsl',  name:'SAVE button',    lvgl:'btnSave',    cls:'',        label:'SAVE',    def:{x:128,y:226,w:104,h:34,fs:11}},
+  {bid:'dsl.load',    screen:'s-dsl',  name:'LOAD button',    lvgl:'btnLoad',    cls:'',        label:'LOAD',    def:{x:238,y:226,w:104,h:34,fs:11}},
+  {bid:'dsl.apply',   screen:'s-dsl',  name:'APPLY button',   lvgl:'btnApply',   cls:' accent', label:'APPLY',   def:{x:348,y:226,w:118,h:34,fs:11}},
+];
+const FORMS = {
+  sweep:  {screen:'s-sweep', baseY:50, pitch:38, lblX:14, lblW:74,  ctlX:92,  rows:[
+    {id:'low',  label:'Low RPM',     ctrl:{type:'field', key:'sweep.low'}},
+    {id:'high', label:'High RPM',    ctrl:{type:'field', key:'sweep.high'}},
+    {id:'mode', label:'Mode',        ctrl:{type:'menu',  key:'sweepmode'}},
+    {id:'iv',   label:'Interval µs', ctrl:{type:'field', key:'sweep.iv'}},
+  ]},
+  comp:   {screen:'s-comp', baseY:48, pitch:33, lblX:14, lblW:96,  ctlX:116, rows:[
+    {id:'en',   label:'Enabled',     ctrl:{type:'switch', on:true}},
+    {id:'cyl',  label:'Cylinders',   ctrl:{type:'field', key:'comp.cyl'}},
+    {id:'thr',  label:'RPM Thresh',  ctrl:{type:'field', key:'comp.thr'}},
+    {id:'peak', label:'Peak',        ctrl:{type:'field', key:'comp.peak'}},
+    {id:'dyn',  label:'Dynamic',     ctrl:{type:'switch', on:false}},
+  ]},
+};
+function regBlock(screenId,bid,meta,def,inner,extraCls){
+  BLOCKS[bid]=meta; DEFAULTS[bid]={...def};
+  const el=document.createElement('div');
+  el.className='blk'+(extraCls||''); el.dataset.bid=bid;
+  el.innerHTML=inner+'<span class="tag"></span><div class="handle"></div>';
+  document.getElementById(screenId).appendChild(el);
+}
+function generateBlocks(){
+  GEN_BUTTONS.forEach(b=>{
+    const inner=`<div class="btn${b.cls}"${b.act?` data-act="${b.act}"`:''}>${b.label}</div>`;
+    regBlock(b.screen, b.bid, {page:b.screen.replace('s-',''), name:b.name, lvgl:b.lvgl}, b.def, inner, '');
+  });
+  for(const page in FORMS){
+    const F=FORMS[page];
+    F.rows.forEach((r,i)=>{
+      const rowY=F.baseY+i*F.pitch, c=r.ctrl;
+      regBlock(F.screen, `${page}.lbl.${r.id}`,
+        {page, name:`"${r.label}" label`, lvgl:'caption (make_spin_row)'},
+        {x:F.lblX, y:rowY+5, w:F.lblW, h:22, fs:11},
+        `<span class="bl-lbl">${r.label}</span>`, ' genlbl');
+      let inner,cdef,cname,clvgl;
+      if(c.type==='field'){ inner=`<div class="sv" data-field="${c.key}">0</div>`; cdef={x:F.ctlX,y:rowY,w:96,h:28,fs:13}; cname=`${r.label} value box`; clvgl='lv_spinbox → keypad'; }
+      else if(c.type==='menu'){ inner=`<div class="ddmini" data-menu="${c.key}">—<span class="car">▾</span></div>`; cdef={x:F.ctlX,y:rowY,w:130,h:28,fs:12}; cname=`${r.label} dropdown`; clvgl='lv_dropdown'; }
+      else { inner=`<span class="switch"><input type="checkbox"${c.on?' checked':''}><span class="tr"></span></span>`; cdef={x:F.ctlX,y:rowY,w:52,h:26,fs:11}; cname=`${r.label} switch`; clvgl='lv_switch'; }
+      regBlock(F.screen, `${page}.ctl.${r.id}`, {page, name:cname, lvgl:clvgl}, cdef, inner, ' genctl');
+    });
+  }
+}
+
+const DSL_HELP =
+`DSL QUICK REFERENCE
+
+A pattern is 1-4 wheels joined by ':'
+Each wheel:  pin , rot , kind , tail
+
+pin   1=crank 2=cam1 3=cam2 (4=knock)
+rot   C = crank, 360 deg
+      c = cam,   720 deg
+kind  S=symmetric  M=missing  A=angular
+duty  n/d  (0<n<d, d<=32)  e.g. 1/2
+
+TAILS
+S (symmetric):  duty , teeth
+   -> teeth*d slots. Each tooth =
+      n slots HIGH then (d-n) LOW.
+M (missing):    duty , teeth , run-list
+   run-list = list of Nt / Nm,
+   e.g. 58t,2m  ('t'=present teeth,
+   'm'=gap teeth). Each tooth, present
+   or gap, takes d slots; gap slots are
+   LOW. sum(t+m)=teeth, need >=1 m.
+A (angular):    deg , deg , ...
+   one slot per degree, alternating
+   HIGH then LOW, starting HIGH.
+   C sums to 360, c sums to 720,
+   each deg > 0.
+
+EXAMPLES
+Crank only (60-2 missing tooth):
+  1,C,M,1/2,60,58t,2m
+Crank + cam (60-2 + 1-tooth cam):
+  1,C,M,1/2,60,58t,2m : 2,c,S,1/2,1
+
+Limits: <=4 wheels, <=4096 slots,
+source <=512 chars, pins unique.`;
+
+/* ---------------- state ---------------- */
+const GDEF = {bg:'#0B1020',surface:'#141C2E',surface2:'#0F1628',accent:'#00E5FF',warn:'#FFB020',
+  text:'#D7E9FF',muted:'#7C8DB0',glow:true,bstyle:'filled',zoom:1.7};
+const state = {
+  ...JSON.parse(JSON.stringify(GDEF)),
+  screen:'sweep', mode:'edit', advLayout:'list',
+  outputActive:false, idleRpm:1000, rpm:1000, sweepMode:'LINEAR',
+  layout:{}, fields:{}, selected:null, rampDir:1, t:0,
+  menus:{pattern:'60-2 crank', sweepmode:'LINEAR'},
+  // DES-5 (NEW features — do not exist in firmware yet):
+  visible:{},  // bid -> bool (default true). Per-block manual show/hide.
+  label:{},    // bid -> string. Overrides hard-coded FORMS/GEN_BUTTONS/BLOCKS labels.
+  showIf:{},   // bid -> {prop, val} rule hook driving step-3 conditional visibility.
+  // builder model (CUSTOM tab):
+  cb:{
+    step:0,
+    ckp:true, cmp1:false, cmp2:false,
+    sub:{ckp:'Missing', cmp1:'Symmetric', cmp2:'Symmetric'},
+    p:{
+      ckp:{n:1,d:2,teeth:60,runs:[{count:58,t:'t'},{count:2,t:'m'}],ang:[120,60,180]},
+      cmp1:{n:1,d:2,teeth:1,runs:[{count:1,t:'t'}],ang:[360,360]},
+      cmp2:{n:1,d:2,teeth:1,runs:[{count:1,t:'t'}],ang:[360,360]},
+    },
+    applied:null, // {ok, msg}
+  },
+};
+generateBlocks(); // create decomposed label/control/button blocks + register their DEFAULTS/BLOCKS
+for(const bid in DEFAULTS) state.layout[bid]={...DEFAULTS[bid]};
+for(const bid in DEFAULTS) state.visible[bid]=true; // DES-5a: all blocks visible by default
+for(const f in FIELDS) state.fields[f]=FIELDS[f][1];
+
+/* DES-5c: state.showIf rule hook. Each rule is {test(state)->bool}. Used in two
+   places: (1) applyBlock honors rules keyed by block-id; (2) the CUSTOM builder's
+   step-3 honors rules keyed by per-channel field tokens "<ch>.duty|teeth|runs|ang"
+   so a field only shows when its channel's chosen subtype matches. This is the
+   single conditional-visibility mechanism that drives step-3 show/hide. */
+['ckp','cmp1','cmp2'].forEach(ch=>{
+  state.showIf[`${ch}.duty`]  ={test:s=>s.cb.sub[ch]==='Symmetric'||s.cb.sub[ch]==='Missing'};
+  state.showIf[`${ch}.teeth`] ={test:s=>s.cb.sub[ch]==='Symmetric'||s.cb.sub[ch]==='Missing'};
+  state.showIf[`${ch}.runs`]  ={test:s=>s.cb.sub[ch]==='Missing'};
+  state.showIf[`${ch}.ang`]   ={test:s=>s.cb.sub[ch]==='Angular'};
+});
+
+const PRESETS = {
+  'HUD Cyan':     {bg:'#0B1020',surface:'#141C2E',surface2:'#0F1628',accent:'#00E5FF',warn:'#FFB020',text:'#D7E9FF',muted:'#7C8DB0',glow:true},
+  'Amber Race':   {bg:'#100A05',surface:'#1E1408',surface2:'#150E06',accent:'#FF8A1E',warn:'#00E5FF',text:'#FFE7CC',muted:'#9C8466',glow:true},
+  'Emerald Dash': {bg:'#06120D',surface:'#0E1F18',surface2:'#0A1812',accent:'#2BE39B',warn:'#FFD23F',text:'#D6FFEC',muted:'#6E9686',glow:true},
+  'Slate Calm':   {bg:'#0D1117',surface:'#161B22',surface2:'#0F141B',accent:'#58A6FF',warn:'#F0883E',text:'#E6EDF3',muted:'#8B949E',glow:false},
+  'High Voltage': {bg:'#0A0814',surface:'#16122A',surface2:'#100D20',accent:'#B388FF',warn:'#FF5DA2',text:'#ECE6FF',muted:'#8A82AD',glow:true}
+};
+
+const $  = id=>document.getElementById(id);
+const dev = $('device');
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+/* ---------------- arc geometry ---------------- */
+function polar(cx,cy,r,a){const rad=a*Math.PI/180;return{x:cx+r*Math.sin(rad),y:cy-r*Math.cos(rad)};}
+function arcPath(cx,cy,r,start,sweep){
+  const a=polar(cx,cy,r,start),b=polar(cx,cy,r,start+sweep),large=sweep>180?1:0;
+  return `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
+}
+function arcFrac(){return clamp((state.rpm-100)/(6000-100),0,1);}
+
+/* ---------------- block apply ---------------- */
+/* DES-5c: evaluate a showIf rule against the current builder model.
+   Returns true when the block should be shown (no rule => always true). */
+function showIfOk(bid){
+  const rule=state.showIf[bid]; if(!rule) return true;
+  try{ return !!rule.test(state); }catch(_){ return true; }
+}
+/* DES-5c: builder step-3 conditional-visibility gate (same showIf hook). */
+function cbFieldVisible(ch,field){ return showIfOk(`${ch}.${field}`); }
+function applyBlock(bid){
+  const el=document.querySelector(`[data-bid="${bid}"]`); if(!el) return;
+  const L=state.layout[bid];
+  el.style.left=L.x+'px'; el.style.top=L.y+'px'; el.style.width=L.w+'px'; el.style.height=L.h+'px';
+  el.style.fontSize=L.fs+'px';
+  // DES-5a/c: manual show/hide + conditional visibility. Edit mode forces the
+  // block visible (the .hidden CSS is overridden under [data-edit="1"]) so it
+  // stays selectable; the .hidden class still tags it for the LVGL brief.
+  const wantHidden = (state.visible[bid]===false) || !showIfOk(bid);
+  el.classList.toggle('hidden', wantHidden);
+  // DES-5b: editable label override (consumed where the block carries a label).
+  const lbl=state.label[bid];
+  if(lbl!==undefined && lbl!==''){
+    const t=el.querySelector('.bl-lbl,.btn,.title,.ptitle,.lname');
+    if(t) t.textContent=lbl;
+  }
+  // titles / ptitle / btn font scale with fs
+  el.querySelectorAll('.title,.ptitle,.btn,.dd,.input,.errline,.hint-lbl,.legend,.bl-lbl,.sv,.ddmini,.complbl').forEach(e=>e.style.fontSize=L.fs+'px');
+  if(el.dataset.arc){
+    const av=el.querySelector('.av'), ac=el.querySelector('.ac');
+    if(av) av.style.fontSize=L.fs+'px';
+    if(ac) ac.style.fontSize=Math.max(7,L.fs*0.32)+'px';
+  }
+  if(el.querySelector('.tag')) el.querySelector('.tag').textContent=(BLOCKS[bid]?BLOCKS[bid].name:bid);
+}
+function applyAllBlocks(){ for(const bid in state.layout) applyBlock(bid); }
+
+/* ---------------- arc drawing ---------------- */
+function drawArcs(){
+  document.querySelectorAll('.blk.arc').forEach(el=>{
+    const L=state.layout[el.dataset.bid]; if(!L) return;
+    // stroke width relative to block; home/sweep ~ thicker
+    const sw = el.dataset.arc==='home' ? 8 : 9;
+    const r = 50 - sw/2 - 3;
+    const bg=el.querySelector('.abg'), ind=el.querySelector('.aind');
+    bg.setAttribute('stroke-width',sw); ind.setAttribute('stroke-width',sw);
+    bg.setAttribute('d',arcPath(50,50,r,225,270));
+    ind.setAttribute('d',arcPath(50,50,r,225,Math.max(0.5,270*arcFrac())));
+    const av=el.querySelector('.av'); if(av) av.textContent=Math.round(state.rpm);
+    const ad=el.querySelector('.ad');
+    if(ad){
+      if(!state.outputActive){ad.textContent='';ad.className='ad';}
+      else if(el.dataset.arc==='sweep'){ad.textContent=(state.rampDir>0?'▲ '+state.sweepMode:'▼ '+state.sweepMode);ad.className='ad '+(state.rampDir>0?'up':'dn');}
+      else if(el.dataset.arc==='comp'){ad.textContent='◐ firing';ad.className='ad dn';}
+    }
+    const op=el.querySelector('.opill');
+    if(op){op.classList.toggle('live',state.outputActive);op.textContent=state.outputActive?'LIVE ●':'OFF';}
+  });
+}
+
+/* ---------------- theme vars ---------------- */
+function hexA(hex,a){const h=hex.replace('#','');const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}
+function applyVars(){
+  ['bg','surface','surface2','accent','warn','text','muted'].forEach(k=>dev.style.setProperty('--'+k,state[k]));
+  dev.style.setProperty('--line',hexA(state.accent,0.22));
+  dev.style.setProperty('--glow',state.glow?0.4:0);
+  dev.dataset.bstyle=state.bstyle;
+  dev.dataset.adv=state.advLayout;
+  dev.dataset.edit=state.mode==='edit'?'1':'0';
+  document.documentElement.style.setProperty('--pg-accent',state.accent);
+}
+
+/* ---------------- screen switching ---------------- */
+function showScreen(){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $(SMAP[state.screen]).classList.add('active');
+  dev.dataset.tabs=(state.screen==='home'||state.screen==='custom'||state.screen==='adv')?'1':'0';
+  document.querySelectorAll('.tabbar .tab').forEach(t=>t.classList.toggle('on',t.dataset.tab===state.screen));
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.s===state.screen));
+  $('curpage').textContent=LABEL[state.screen];
+  // advanced grid/list toggle (cosmetic via flex direction)
+  $('advbody').style.flexDirection = state.advLayout==='grid'?'row':'column';
+  $('advbody').style.flexWrap = state.advLayout==='grid'?'wrap':'nowrap';
+  closeAllPops();
+}
+
+/* ---------------- field values ---------------- */
+function syncFields(){
+  document.querySelectorAll('[data-field]').forEach(e=>e.textContent=state.fields[e.dataset.field]);
+  document.querySelectorAll('[data-menu="pattern"]').forEach(e=>e.childNodes[0].nodeValue=state.menus.pattern);
+  document.querySelectorAll('[data-menu="sweepmode"]').forEach(e=>e.childNodes[0].nodeValue=state.menus.sweepmode);
+}
+
+/* ---------------- render ---------------- */
+function render(){
+  applyVars(); showScreen(); applyAllBlocks(); drawArcs(); syncFields(); renderBuilder();
+  $('scaler').style.transform=`scale(${state.zoom})`;
+  $('scaler').style.height=(272*state.zoom)+'px';
+  $('scaler').style.width=(480*state.zoom)+'px';
+  $('zlab').textContent=state.zoom.toFixed(2)+'×';
+  $('zoom_v').textContent=state.zoom.toFixed(2)+'×';
+  $('rpm_v').textContent=state.rpm;
+  $('modetip').textContent = state.mode==='edit'
+     ? 'Edit mode — drag blocks, drag corner to resize, set font at left.'
+     : 'Interact mode — tap a number to open the keypad, tap a textbox for the keyboard.';
+  syncEditPanel();
+  updatePrompt();
+}
+
+/* ---------------- selection + edit panel ---------------- */
+function selectBlock(bid){
+  state.selected=bid;
+  document.querySelectorAll('.blk').forEach(b=>b.classList.toggle('sel',b.dataset.bid===bid));
+  syncEditPanel();
+}
+function clearSelection(){ state.selected=null; document.querySelectorAll('.blk').forEach(b=>b.classList.remove('sel')); syncEditPanel(); }
+function syncEditPanel(){
+  const has = state.selected && state.mode==='edit';
+  $('edpanel').classList.toggle('show',!!has);
+  $('ednone').style.display = has?'none':'block';
+  if(!has){ $('selname').textContent='—'; return; }
+  const L=state.layout[state.selected];
+  $('selname').textContent=BLOCKS[state.selected].name;
+  $('ed_x').value=L.x; $('ed_y').value=L.y; $('ed_w').value=L.w; $('ed_h').value=L.h;
+  $('ed_fs').value=L.fs; $('ed_fs_v').textContent=L.fs+'px';
+  // DES-5: reflect visibility + label override for the selected block
+  $('ed_vis').checked = state.visible[state.selected]!==false;
+  $('ed_label').value = state.label[state.selected]||'';
+}
+
+/* ---------------- drag + resize ---------------- */
+let drag=null;
+function blockPointerDown(e){
+  if(state.mode!=='edit') return;
+  const blk=e.target.closest('.blk'); if(!blk) return;
+  e.preventDefault();
+  const bid=blk.dataset.bid; selectBlock(bid);
+  const L=state.layout[bid];
+  const isHandle=e.target.classList.contains('handle');
+  drag={bid,mode:isHandle?'resize':'move',sx:e.clientX,sy:e.clientY,ox:L.x,oy:L.y,ow:L.w,oh:L.h};
+  window.addEventListener('pointermove',blockPointerMove);
+  window.addEventListener('pointerup',blockPointerUp);
+}
+function blockPointerMove(e){
+  if(!drag) return;
+  const dx=(e.clientX-drag.sx)/state.zoom, dy=(e.clientY-drag.sy)/state.zoom;
+  const L=state.layout[drag.bid];
+  if(drag.mode==='move'){
+    L.x=Math.round(clamp(drag.ox+dx,0,480-L.w));
+    L.y=Math.round(clamp(drag.oy+dy,0,272-L.h));
+  }else{
+    L.w=Math.round(clamp(drag.ow+dx,24,480-L.x));
+    L.h=Math.round(clamp(drag.oh+dy,16,272-L.y));
+  }
+  applyBlock(drag.bid); drawArcs(); syncEditPanel(); updatePrompt();
+}
+function blockPointerUp(){ drag=null;
+  window.removeEventListener('pointermove',blockPointerMove);
+  window.removeEventListener('pointerup',blockPointerUp);
+}
+
+/* ---------------- popups ---------------- */
+function closeAllPops(){ document.querySelectorAll('.pop').forEach(p=>p.classList.remove('show')); }
+
+/* numeric keypad (Finding 4) */
+let kpField=null, kpBuf='';
+function openKeypad(field){
+  kpField=field; kpBuf='';
+  const [lbl,,mn,mx]=FIELDS[field];
+  $('kp-label').textContent=lbl;
+  $('kp-range').textContent=mn+'–'+mx;
+  $('kp-disp').textContent=String(state.fields[field]);
+  kpBuf=String(state.fields[field]);
+  closeAllPops(); $('pop-keypad').classList.add('show');
+}
+function kpPress(k){
+  if(k==='C'){kpBuf='';}
+  else if(k==='⌫'){kpBuf=kpBuf.slice(0,-1);}
+  else if(k==='.'){/* integers only */}
+  else { if(kpBuf.length<7) kpBuf=(kpBuf==='0'?'':kpBuf)+k; }
+  $('kp-disp').textContent=kpBuf||'0';
+}
+function kpOk(){
+  if(kpField){
+    const [, ,mn,mx]=FIELDS[kpField];
+    let v=parseInt(kpBuf||'0',10); if(isNaN(v))v=mn;
+    v=clamp(v,mn,mx);
+    state.fields[kpField]=v;
+  }
+  kpField=null; closeAllPops(); syncFields(); updatePrompt();
+}
+function buildKeypad(){
+  const grid=$('kp-grid'); grid.innerHTML='';
+  ['1','2','3','4','5','6','7','8','9','C','0','⌫'].forEach(k=>{
+    const d=document.createElement('div'); d.className='k'+((k==='C'||k==='⌫')?' fn':''); d.textContent=k;
+    d.onclick=()=>kpPress(k); grid.appendChild(d);
+  });
+}
+
+/* qwerty keyboard mock */
+function openKbd(kind){
+  $('kbd-cap').textContent = kind==='dsl' ? 'DSL source · on-screen keyboard' : 'pattern filter · on-screen keyboard';
+  closeAllPops(); $('pop-kbd').classList.add('show');
+}
+function buildKbd(){
+  const kbd=$('kbd');
+  const rows=[['1','2','3','4','5','6','7','8','9','0'],
+              ['q','w','e','r','t','y','u','i','o','p'],
+              ['a','s','d','f','g','h','j','k','l'],
+              ['z','x','c','v','b','n','m',',','/']];
+  rows.forEach(r=>{const d=document.createElement('div');d.className='kr';
+    r.forEach(k=>{const b=document.createElement('div');b.className='kk';b.textContent=k;b.onclick=e=>e.stopPropagation();d.appendChild(b);});kbd.appendChild(d);});
+  const last=document.createElement('div');last.className='kr';
+  ['ABC','space','✓ OK'].forEach((k,i)=>{const b=document.createElement('div');b.className='kk wide'+(i===1?'':'');b.style.maxWidth=i===1?'180px':'90px';b.textContent=k;
+    b.onclick=e=>{e.stopPropagation(); if(k.indexOf('OK')>=0) closeAllPops();};last.appendChild(b);});
+  kbd.appendChild(last);
+}
+
+/* dropdown menu */
+function openMenu(kind,anchor){
+  const menu=$('menu'); menu.innerHTML='';
+  let opts=[], cur='';
+  if(kind==='pattern'){opts=['60-2 crank','36-1 crank','4-1 cam','24X angular','60-2 + cam'];cur=state.menus.pattern;}
+  if(kind==='sweepmode'){opts=['OFF','LINEAR','LOG','WAYPOINT'];cur=state.menus.sweepmode;}
+  opts.forEach(o=>{const d=document.createElement('div');d.className='mi'+(o===cur?' on':'');d.textContent=o;
+    d.onclick=()=>{state.menus[kind]=o; if(kind==='sweepmode'){state.sweepMode=o;$('sweepmode').value=o;} closeAllPops();syncFields();updatePrompt();};menu.appendChild(d);});
+  const r=anchor.getBoundingClientRect(), dr=dev.getBoundingClientRect();
+  menu.style.left=clamp((r.left-dr.left)/state.zoom,4,300)+'px';
+  menu.style.top=clamp((r.bottom-dr.top)/state.zoom+4,4,200)+'px';
+  closeAllPops(); $('pop-menu').classList.add('show');
+}
+
+/* help overlay (Finding 7.2 — scrollable) */
+function openHelp(){ $('helptxt').textContent=DSL_HELP; closeAllPops(); $('pop-help').classList.add('show'); $('helptxt').scrollTop=0; }
+
+/* ---------------- device interaction (live mode) ---------------- */
+dev.addEventListener('pointerdown',e=>{
+  if(state.mode==='edit'){ blockPointerDown(e); return; }
+}, true);
+
+dev.addEventListener('click',e=>{
+  // popup action buttons work in both modes
+  const act=e.target.closest('[data-act]');
+  if(act){
+    const a=act.dataset.act;
+    if(a==='kp-back'){kpField=null;closeAllPops();return;}
+    if(a==='kp-ok'){kpOk();return;}
+    if(a==='kbd-close'||a==='menu-close'||a==='help-close'){closeAllPops();return;}
+    if(state.mode!=='live') return;
+    if(a==='start'){toggleOutput();return;}
+    if(a==='back'){state.outputActive=false;$('outact').checked=false;goScreen('adv');return;}
+    if(a==='help'){openHelp();return;}
+    if(a==='cb-prev'){cbGo(state.cb.step-1);return;}
+    if(a==='cb-next'){cbNext();return;}
+    return;
+  }
+  if(state.mode!=='live') return;
+  // numeric field -> keypad
+  const f=e.target.closest('[data-field]'); if(f){openKeypad(f.dataset.field);return;}
+  // text field -> keyboard
+  const k=e.target.closest('[data-kbd]'); if(k){openKbd(k.dataset.kbd);return;}
+  // dropdown menu
+  const m=e.target.closest('[data-menu]'); if(m){openMenu(m.dataset.menu,m);return;}
+  // advanced list nav
+  const lr=e.target.closest('.lrow'); if(lr){if(lr.dataset.go)goScreen(lr.dataset.go);return;}
+  // tab bar
+  const tb=e.target.closest('.tab'); if(tb){goScreen(tb.dataset.tab);return;}
+});
+
+function toggleOutput(){ state.outputActive=!state.outputActive; $('outact').checked=state.outputActive; render(); }
+function goScreen(s){ state.screen=s; clearSelection(); render(); }
+
+/* ---------------- animation loop ---------------- */
+function sweepRpm(){
+  const lo=state.fields['sweep.low'], hi=state.fields['sweep.high'];
+  if(state.menus.sweepmode==='OFF'){ return lo; }
+  // triangle 0..1 phase
+  let p=(state.t%200)/100; if(p>1){p=2-p; state.rampDir=-1;} else state.rampDir=1;
+  let f=p;
+  if(state.menus.sweepmode==='LOG') f=Math.pow(p,0.45);
+  if(state.menus.sweepmode==='WAYPOINT') f=Math.round(p*4)/4;
+  return Math.round(lo+(hi-lo)*f);
+}
+function compRpm(){
+  const thr=state.fields['comp.thr'], cyl=state.fields['comp.cyl'], peak=state.fields['comp.peak'];
+  const base=state.idleRpm;
+  // how strongly compression bites: stronger below threshold
+  const bite=clamp((thr-base)/thr,0,1)*0.7+0.18;
+  const maxDip=(peak/255)*base*0.45*bite;
+  const phase=state.t*cyl*0.16;
+  const ripple=Math.pow(Math.max(0,Math.sin(phase)),3); // sharp downward bites
+  return Math.max(60,Math.round(base-maxDip*ripple));
+}
+function animTick(){
+  state.t++;
+  if(state.outputActive){
+    if(state.screen==='sweep') state.rpm=sweepRpm();
+    else if(state.screen==='comp') state.rpm=compRpm();
+    else state.rpm=state.idleRpm;
+  }else{
+    state.rpm=state.idleRpm;
+  }
+  drawArcs();
+  $('rpm_v').textContent=state.rpm;
+}
+setInterval(animTick,40);
+
+/* ============================================================
+   CUSTOM tab — 5-step guided DSL builder (DES-3) + Output-Waveform (DES-4)
+   ------------------------------------------------------------
+   Emits a COMPACT colon-joined DSL string through the conceptual dslCompile()
+   path. Live-validation here is a strict SUPERSET of the real compiler
+   (Parser.cpp / Validator.cpp / Compiler.cpp) so a preview that says "OK"
+   never trips a parser error the user didn't see.
+   Wheel order: pin1=CKP(crank,bit0,'C'/360), pin2=CMP1(cam1,bit1,'c'/720),
+   pin3=CMP2(cam2,bit2,'c'/720). Any cam => whole pattern is 720°.
+   ============================================================ */
+const CB_STEPS=['Channels','Subtype','Parameters','Preview','Apply'];
+const TEETH_MAX=65535;          // Parser.cpp: total teeth 0..0xFFFF
+const SLOT_MAX=4096;            // Validator/Compiler per-wheel & LCM cap
+
+function cbEnabled(){const c=state.cb;const a=['ckp'];if(c.cmp1)a.push('cmp1');if(c.cmp2)a.push('cmp2');return a;}
+function cbHasCam(){return state.cb.cmp1||state.cb.cmp2;}
+function cbSpanFor(ch){return ch==='ckp'?360:720;}        // cam wheels live in a 720° group
+function cbPinOf(ch){return ch==='ckp'?1:(ch==='cmp1'?2:3);}
+function cbRotOf(ch){return ch==='ckp'?'C':'c';}
+function cbLabelOf(ch){return ch==='ckp'?'CKP':(ch==='cmp1'?'CMP1':'CMP2');}
+function cbBitOf(ch){return ch==='ckp'?0:(ch==='cmp1'?1:2);}
+
+/* gcd/lcm mirror Compiler.cpp lcm_u32 */
+function cbGcd(a,b){while(b){[a,b]=[b,a%b];}return a;}
+function cbLcm(a,b){return (!a||!b)?0:(a/cbGcd(a,b))*b;}
+
+/* ---- per-channel native slot count (NO cam doubling — that is crank-only) ----
+   S/M => teeth*d ; Angular => Σdeg (=360 for C, =720 for c). */
+function cbNativeSlots(ch){
+  const c=state.cb,p=c.p[ch],sub=c.sub[ch];
+  if(sub==='Symmetric') return p.teeth*p.d;
+  if(sub==='Missing')   return p.teeth*p.d;
+  return p.ang.reduce((s,v)=>s+(+v||0),0);  // Angular
+}
+
+/* ---- per-channel validation (strict superset of the real compiler) ----
+   Returns {ok, errs:[...], slots}. */
+function cbValidate(ch){
+  const c=state.cb,p=c.p[ch],sub=c.sub[ch],errs=[];
+  if(sub==='Symmetric'||sub==='Missing'){
+    if(!(p.n>=1)) errs.push('duty numerator n ≥ 1');
+    if(!(p.d>=2)) errs.push('duty denom d ≥ 2');
+    if(!(p.d<=32)) errs.push('duty denom d ≤ 32');
+    if(!(p.n<p.d)) errs.push('need n < d');
+    if(!(p.teeth>=1)) errs.push('teeth ≥ 1');
+    if(p.teeth>TEETH_MAX) errs.push('teeth ≤ '+TEETH_MAX+' (parser uint16)');
+  }
+  if(sub==='Missing'){
+    const present=p.runs.filter(r=>r.t==='t').reduce((s,r)=>s+(+r.count||0),0);
+    const miss=p.runs.filter(r=>r.t==='m').reduce((s,r)=>s+(+r.count||0),0);
+    if(present+miss!==p.teeth) errs.push(`run rows sum ${present+miss} ≠ teeth ${p.teeth}`);
+    if(miss<1) errs.push('need ≥1 missing (m) row');
+    p.runs.forEach((r,i)=>{ if(!((+r.count)>=1)) errs.push(`run #${i+1} count ≥ 1`); });
+  }
+  if(sub==='Angular'){
+    const want=cbSpanFor(ch);
+    p.ang.forEach((v,i)=>{ if(!((+v)>0)) errs.push(`degree #${i+1} > 0`); });
+    const sum=p.ang.reduce((s,v)=>s+(+v||0),0);
+    if(sum!==want) errs.push(`degrees sum ${sum} ≠ ${want}`);
+  }
+  let slots=cbNativeSlots(ch);
+  if(!(slots>=2)) errs.push('slots ≥ 2');
+  if(slots>SLOT_MAX) errs.push('slots ≤ '+SLOT_MAX);
+  return {ok:errs.length===0, errs, slots};
+}
+
+/* ---- emit ONE wheel's compact DSL token ---- */
+function cbEmitWheel(ch){
+  const c=state.cb,p=c.p[ch],sub=c.sub[ch];
+  const pin=cbPinOf(ch),rot=cbRotOf(ch);
+  if(sub==='Symmetric') return `${pin},${rot},S,${p.n}/${p.d},${p.teeth}`;
+  if(sub==='Missing'){
+    const runs=p.runs.map(r=>`${r.count}${r.t}`).join(',');
+    return `${pin},${rot},M,${p.n}/${p.d},${p.teeth},${runs}`;
+  }
+  return `${pin},${rot},A,${p.ang.join(',')}`;          // Angular
+}
+function cbEmitDsl(){return cbEnabled().map(cbEmitWheel).join(':');}        // compact payload
+function cbEmitDslSpaced(){return cbEnabled().map(cbEmitWheel).join(' : ');} // on-screen display
+
+/* ---- expand one wheel to a 0/1 vector (mirrors Compiler.cpp expandWheel) ----
+   For the crank ('C') in a 720 group it is doubled (Compiler.cpp:220-224).
+   Cam wheels are NEVER doubled. */
+function cbExpandWheel(ch,groupIs720){
+  const c=state.cb,p=c.p[ch],sub=c.sub[ch];
+  let v=[];
+  if(sub==='Symmetric'){
+    for(let i=0;i<p.teeth;i++){for(let k=0;k<p.n;k++)v.push(1);for(let k=0;k<p.d-p.n;k++)v.push(0);}
+  }else if(sub==='Missing'){
+    // present tooth = n HIGH then (d-n) LOW; gap tooth = d LOW
+    p.runs.forEach(r=>{for(let t=0;t<r.count;t++){
+      if(r.t==='t'){for(let k=0;k<p.n;k++)v.push(1);for(let k=0;k<p.d-p.n;k++)v.push(0);}
+      else{for(let k=0;k<p.d;k++)v.push(0);}
+    }});
+  }else{ // Angular: 1 slot/deg alternating HIGH then LOW, starting HIGH
+    let lvl=1; p.ang.forEach(d=>{for(let i=0;i<(+d||0);i++)v.push(lvl);lvl=lvl?0:1;});
+  }
+  // crank doubling only (CW wheel in a 720 group)
+  if(groupIs720 && ch==='ckp') v=v.concat(v);
+  return v;
+}
+
+/* ---- authoritative slot math: per-wheel expanded length + LCM merge ---- */
+function cbCompiledStats(){
+  const chans=cbEnabled(),is720=cbHasCam();
+  const lens=chans.map(ch=>cbExpandWheel(ch,is720).length);
+  let L=lens[0]||0; for(let i=1;i<lens.length;i++)L=cbLcm(L,lens[i]);
+  return {slots:L, span:is720?720:360, lens, chans};
+}
+
+/* ---- conceptual dslCompile(): returns a DslResult-style {ok,msg} ---- */
+function cbCompile(){
+  const chans=cbEnabled();
+  for(const ch of chans){const v=cbValidate(ch); if(!v.ok) return {ok:false,msg:`${cbLabelOf(ch)}: ${v.errs[0]}`};}
+  const st=cbCompiledStats();
+  if(!(st.slots>=2)) return {ok:false,msg:'compiled to <2 slots'};
+  if(st.slots>SLOT_MAX) return {ok:false,msg:`LCM ${st.slots} exceeds ${SLOT_MAX}-slot limit`};
+  return {ok:true,msg:`OK — compiled ${st.slots} slots · span ${st.span}°`};
+}
+
+/* ============ DES-4: Output-Waveform canvas ============ */
+function cbDrawWaveform(cv){
+  if(!cv) return;
+  const is720=cbHasCam(), span=is720?720:360;
+  const dpr=window.devicePixelRatio||1, W=cv.clientWidth||440, H=cv.clientHeight||96;
+  cv.width=W*dpr; cv.height=H*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr);
+  const css=getComputedStyle(dev);
+  const cAcc=css.getPropertyValue('--accent').trim()||'#00E5FF';
+  const cMut=css.getPropertyValue('--muted').trim()||'#7C8DB0';
+  const cTxt=css.getPropertyValue('--text').trim()||'#D7E9FF';
+  g.clearRect(0,0,W,H);
+  const padL=34, padR=8, padT=6, padB=14, plotW=W-padL-padR;
+  const xOf=deg=>padL+plotW*(deg/span);
+  // 90° gridlines + TDC + axis labels
+  g.font='8px ui-monospace,monospace'; g.textAlign='center';
+  for(let d=0;d<=span;d+=90){const x=xOf(d);g.strokeStyle='rgba(124,141,176,.18)';g.beginPath();g.moveTo(x,padT);g.lineTo(x,H-padB);g.stroke();
+    g.fillStyle=cMut; g.fillText(d+'°',x,H-3);}
+  // TDC marker at 0°
+  g.strokeStyle=cAcc; g.setLineDash([2,2]); g.beginPath();g.moveTo(xOf(0),padT);g.lineTo(xOf(0),H-padB);g.stroke();g.setLineDash([]);
+  g.fillStyle=cAcc; g.textAlign='left'; g.fillText('TDC',xOf(0)+2,padT+7);
+  // lanes (only enabled channels). crank repeats twice across 0..720 (doubled wheel);
+  // cam plotted ONCE from its own expansion — do NOT double the cam.
+  const chans=cbEnabled();
+  const laneH=(H-padT-padB)/Math.max(1,chans.length);
+  g.textAlign='right';
+  chans.forEach((ch,li)=>{
+    const v=cbExpandWheel(ch,is720);            // already crank-doubled for 720
+    const n=v.length; if(!n) return;
+    const top=padT+li*laneH, hi=top+4, lo=top+laneH-6;
+    g.fillStyle=cMut; g.font='8px ui-monospace,monospace';
+    g.fillText(cbLabelOf(ch),padL-3,top+laneH/2+3);
+    g.strokeStyle=cAcc; g.lineWidth=1.4; g.beginPath();
+    // the expanded vector maps uniformly across the full span (0..span)
+    for(let j=0;j<n;j++){
+      const x0=padL+plotW*(j/n), x1=padL+plotW*((j+1)/n);
+      const y=v[j]?hi:lo;
+      if(j===0) g.moveTo(x0,y); else g.lineTo(x0,y);
+      g.lineTo(x1,y);
+      if(j<n-1 && v[j]!==v[j+1]) g.lineTo(x1,v[j+1]?hi:lo);
+    }
+    g.stroke();
+  });
+  // shaded labeled missing-gap band(s) — only for Missing-subtype channels
+  chans.forEach((ch,li)=>{
+    if(state.cb.sub[ch]!=='Missing') return;
+    const p=state.cb.p[ch];
+    const totalTeeth=p.teeth;
+    // walk runs to find m-runs; account for crank doubling (pattern plays twice)
+    const reps=(ch==='ckp'&&is720)?2:1;
+    let toothIdx=0; const bands=[];
+    p.runs.forEach(r=>{ if(r.t==='m') bands.push([toothIdx,toothIdx+r.count]); toothIdx+=r.count; });
+    const top=padT+li*laneH;
+    for(let rep=0;rep<reps;rep++){
+      bands.forEach(([a,b],bi)=>{
+        const segDeg=span/reps;
+        const x0=padL+plotW*((rep*segDeg + a/totalTeeth*segDeg)/span);
+        const x1=padL+plotW*((rep*segDeg + b/totalTeeth*segDeg)/span);
+        g.fillStyle='rgba(255,107,129,.16)';
+        g.fillRect(x0,top+2,Math.max(2,x1-x0),laneH-8);
+        if(rep===0 && bi===0){ g.fillStyle='#FF6B81'; g.font='7px ui-monospace,monospace'; g.textAlign='left';
+          g.fillText(`gap ${(b-a)}T`,x0+1,top+9); }
+      });
+    }
+  });
+}
+
+/* ---------------- step navigation ---------------- */
+function cbGo(step){ state.cb.step=clamp(step,0,CB_STEPS.length-1); renderBuilder(); }
+function cbNext(){
+  // gate Apply behind a clean compile
+  if(state.cb.step===4) return; // last step uses Apply buttons, not Next
+  cbGo(state.cb.step+1);
+}
+
+/* ---------------- builder rendering ---------------- */
+function cbStepStrip(){
+  const el=$('cb-stepstrip'); if(!el) return; el.innerHTML='';
+  CB_STEPS.forEach((nm,i)=>{
+    const d=document.createElement('div');
+    d.className='st'+(i===state.cb.step?' on':(i<state.cb.step?' done':''));
+    d.innerHTML=`<span class="sn">${i+1}</span>${nm}`;
+    d.onclick=()=>{ if(state.mode==='live') cbGo(i); };
+    el.appendChild(d);
+  });
+}
+function cbRenderStep1(b){
+  const c=state.cb;
+  b.innerHTML=`
+    <div class="cb-sect">Step 1 · Channels</div>
+    <div class="cb-card">
+      <div class="cb-line"><span class="l">CKP (crank · pin1)</span><span class="cb-chip">required · C / 360°</span></div>
+      <div class="cb-line"><span class="l">CMP1 (cam1 · pin2)</span>
+        <span class="switch"><input type="checkbox" id="cb-cmp1" ${c.cmp1?'checked':''}><span class="tr"></span></span></div>
+      <div class="cb-line"><span class="l">CMP2 (cam2 · pin3)</span>
+        <span class="switch"><input type="checkbox" id="cb-cmp2" ${c.cmp2?'checked':''}><span class="tr"></span></span></div>
+      <div class="cb-line"><span class="l">Rotation (auto)</span><span class="cb-chip">${cbHasCam()?'720° · crank repeated 2×':'360° · crank only'}</span></div>
+    </div>
+    <p class="cb-readout">${cbHasCam()
+      ?'Adding a cam makes the whole pattern 720°; the crank wheel is repeated twice internally.'
+      :'Knock / pin4 not offered. Enable a cam to extend to 720°.'}</p>`;
+  b.querySelector('#cb-cmp1').onchange=e=>{c.cmp1=e.target.checked;renderBuilder();};
+  b.querySelector('#cb-cmp2').onchange=e=>{c.cmp2=e.target.checked;renderBuilder();};
+}
+function cbRenderStep2(b){
+  const c=state.cb;
+  let h=`<div class="cb-sect">Step 2 · Subtype per channel</div>`;
+  cbEnabled().forEach(ch=>{
+    h+=`<div class="cb-card"><div class="cb-line"><span class="l">${cbLabelOf(ch)}</span><span class="cb-chip">${cbRotOf(ch)} / ${cbSpanFor(ch)}°</span></div>
+      <div class="cb-seg" data-ch="${ch}">
+        ${['Symmetric','Missing','Angular'].map(s=>`<div class="sb${c.sub[ch]===s?' on':''}" data-sub="${s}">${s}</div>`).join('')}
+      </div></div>`;
+  });
+  b.innerHTML=h;
+  b.querySelectorAll('.cb-seg').forEach(seg=>{const ch=seg.dataset.ch;
+    seg.querySelectorAll('.sb').forEach(sb=>sb.onclick=()=>{c.sub[ch]=sb.dataset.sub;renderBuilder();});});
+}
+function cbFrac(ch){
+  const p=state.cb.p[ch];
+  return `<div class="cb-frac">
+    <input class="cb-num" type="number" value="${p.n}" min="1" data-cbf="n" data-ch="${ch}" style="width:42px">
+    <span class="sl">/</span>
+    <input class="cb-num" type="number" value="${p.d}" min="2" max="32" data-cbf="d" data-ch="${ch}" style="width:42px"></div>`;
+}
+function cbRenderStep3(b){
+  const c=state.cb;
+  let h=`<div class="cb-sect">Step 3 · Parameters (live validation)</div>`;
+  cbEnabled().forEach(ch=>{
+    const sub=c.sub[ch],p=c.p[ch],val=cbValidate(ch);
+    h+=`<div class="cb-card"><div class="cb-line"><span class="l">${cbLabelOf(ch)} · ${sub}</span><span class="cb-chip">slots ${val.slots}</span></div>`;
+    // DES-5c: every field below is gated by the state.showIf rule hook
+    // (cbFieldVisible), NOT a hard-coded subtype switch — the hook drives show/hide.
+    if(cbFieldVisible(ch,'duty')){
+      h+=`<div class="cb-line"><span class="l">Duty n/d</span>${cbFrac(ch)}</div>`;
+    }
+    if(cbFieldVisible(ch,'teeth')){
+      h+=`<div class="cb-line"><span class="l">Total teeth</span><input class="cb-num" type="number" value="${p.teeth}" min="1" max="${TEETH_MAX}" data-cbf="teeth" data-ch="${ch}"></div>`;
+    }
+    if(cbFieldVisible(ch,'teeth') && sub==='Symmetric'){
+      h+=`<p class="cb-readout">derived <b>slots = teeth×d = ${p.teeth}×${p.d} = ${p.teeth*p.d}</b></p>`;
+    }
+    if(cbFieldVisible(ch,'runs')){
+      h+=`<div class="cb-sect">Run rows (emission order · t=present, m=gap)</div>
+          <div class="cb-rows" data-ch="${ch}">`;
+      p.runs.forEach((r,i)=>{
+        h+=`<div class="cb-rrow" data-i="${i}">
+          <input class="cb-num" type="number" value="${r.count}" min="1" data-cbrun="count" data-ch="${ch}" data-i="${i}">
+          <div class="seg2">
+            <div class="sb${r.t==='t'?' on':''}" data-cbrt="t" data-ch="${ch}" data-i="${i}">t</div>
+            <div class="sb${r.t==='m'?' on':''}" data-cbrt="m" data-ch="${ch}" data-i="${i}">m</div>
+          </div>
+          <div class="rx" data-cbdel="${ch}" data-i="${i}">×</div></div>`;
+      });
+      const present=p.runs.filter(r=>r.t==='t').reduce((s,r)=>s+(+r.count||0),0);
+      const miss=p.runs.filter(r=>r.t==='m').reduce((s,r)=>s+(+r.count||0),0);
+      const ledOk=(present+miss===p.teeth)&&miss>=1;
+      h+=`</div><button class="cb-addrow" data-cbadd="${ch}">+ add run row</button>
+          <div class="cb-led"><span class="${ledOk?'ok':'err'}">${ledOk?'✓':'✗'}</span>
+          present ${present} + missing ${miss} = ${present+miss} / teeth ${p.teeth}${miss<1?' · need ≥1 m':''}</div>`;
+    }
+    if(cbFieldVisible(ch,'ang')){
+      const want=cbSpanFor(ch),sum=p.ang.reduce((s,v)=>s+(+v||0),0);
+      h+=`<div class="cb-sect">Degree rows (alternating HIGH/LOW, starts HIGH)</div>
+          <div class="cb-rows" data-ch="${ch}">`;
+      p.ang.forEach((d,i)=>{
+        const hi=i%2===0;
+        h+=`<div class="cb-rrow" data-i="${i}">
+          <span class="deglbl ${hi?'hi':'lo'}">#${i+1} ${hi?'HIGH':'LOW'}</span>
+          <input class="cb-num" type="number" value="${d}" min="1" data-cbang="${ch}" data-i="${i}">
+          <span class="l">°</span>
+          <div class="rx" data-cbangdel="${ch}" data-i="${i}">×</div></div>`;
+      });
+      const parityHint=(p.ang.length%2!==0)?' · odd count: last HIGH merges with start':'';
+      h+=`</div><button class="cb-addrow" data-cbangadd="${ch}">+ add degree row</button>
+          <div class="cb-led"><span class="${sum===want?'ok':'err'}">${sum===want?'✓':'✗'}</span>
+          sum ${sum}° / ${want}°${parityHint}</div>`;
+    }
+    if(!val.ok) h+=`<div class="cb-led"><span class="err">✗</span> ${val.errs[0]}</div>`;
+    h+=`</div>`;
+  });
+  b.innerHTML=h;
+  cbWireStep3(b);
+}
+function cbWireStep3(b){
+  const c=state.cb;
+  b.querySelectorAll('[data-cbf]').forEach(inp=>inp.oninput=e=>{
+    const ch=e.target.dataset.ch,f=e.target.dataset.cbf;let v=parseInt(e.target.value)||0;
+    if(f==='teeth') v=clamp(v,0,TEETH_MAX);
+    c.p[ch][f]=v; cbLiveRefresh();});
+  b.querySelectorAll('[data-cbrun]').forEach(inp=>inp.oninput=e=>{
+    const ch=e.target.dataset.ch,i=+e.target.dataset.i;c.p[ch].runs[i].count=parseInt(e.target.value)||0;cbLiveRefresh();});
+  b.querySelectorAll('[data-cbrt]').forEach(sb=>sb.onclick=()=>{
+    const ch=sb.dataset.ch,i=+sb.dataset.i;c.p[ch].runs[i].t=sb.dataset.cbrt;renderBuilder();});
+  b.querySelectorAll('[data-cbdel]').forEach(x=>x.onclick=()=>{
+    const ch=x.dataset.cbdel,i=+x.dataset.i;if(c.p[ch].runs.length>1)c.p[ch].runs.splice(i,1);renderBuilder();});
+  b.querySelectorAll('[data-cbadd]').forEach(btn=>btn.onclick=()=>{
+    const ch=btn.dataset.cbadd;c.p[ch].runs.push({count:1,t:'t'});renderBuilder();});
+  b.querySelectorAll('[data-cbang]').forEach(inp=>inp.oninput=e=>{
+    const ch=e.target.dataset.cbang,i=+e.target.dataset.i;c.p[ch].ang[i]=parseInt(e.target.value)||0;cbLiveRefresh();});
+  b.querySelectorAll('[data-cbangdel]').forEach(x=>x.onclick=()=>{
+    const ch=x.dataset.cbangdel,i=+x.dataset.i;if(c.p[ch].ang.length>1)c.p[ch].ang.splice(i,1);renderBuilder();});
+  b.querySelectorAll('[data-cbangadd]').forEach(btn=>btn.onclick=()=>{
+    const ch=btn.dataset.cbangadd;c.p[ch].ang.push(1);renderBuilder();});
+}
+/* Live refresh on numeric input. Re-render rebuilds the step (cursor jumps on
+   number inputs — acceptable for a mockup); validation ledgers update live. */
+function cbLiveRefresh(){ renderBuilder(); }
+function cbRenderStep4(b){
+  const st=cbCompiledStats(), dsl=cbEmitDslSpaced(), payload=cbEmitDsl();
+  b.innerHTML=`
+    <div class="cb-sect">Step 4 · Preview</div>
+    <div class="cb-card wfwrap">
+      <canvas class="wf" id="cb-canvas"></canvas>
+      <div class="cb-readout"><b>slots ${st.slots}</b>/${SLOT_MAX} · span ${st.span}°</div>
+    </div>
+    <div class="cb-sect">Emitted DSL (compact payload)</div>
+    <div class="cb-dsl" id="cb-dslout">${payload}</div>
+    <p class="cb-readout">on-screen (spaced): ${dsl}</p>`;
+  cbDrawWaveform(b.querySelector('#cb-canvas'));
+}
+function cbRenderStep5(b){
+  const c=state.cb, res=c.applied;
+  const dsl=cbEmitDsl();
+  b.innerHTML=`
+    <div class="cb-sect">Step 5 · Apply</div>
+    <div class="cb-card cb-recap">
+      ${cbEnabled().map(ch=>`<div><span class="k">${cbLabelOf(ch)}:</span> ${c.sub[ch]} · ${cbEmitWheel(ch)}</div>`).join('')}
+      <div><span class="k">span:</span> ${cbHasCam()?720:360}° · <span class="k">slots:</span> ${cbCompiledStats().slots}/${SLOT_MAX}</div>
+    </div>
+    <div class="cb-dsl">${dsl}</div>
+    <div class="cb-navbar" style="height:34px">
+      <div class="btn" data-act="cb-apply">APPLY</div>
+      <div class="btn accent" data-act="cb-applystart">APPLY + START</div>
+    </div>
+    ${res?`<div class="cb-status ${res.ok?'ok':'err'}">${res.msg}</div>`:''}`;
+  // route Apply through the conceptual dslCompile() and reuse #s-dsl err styling
+  b.querySelectorAll('[data-act="cb-apply"],[data-act="cb-applystart"]').forEach(btn=>btn.onclick=()=>{
+    const r=cbCompile(); state.cb.applied=r; renderBuilder();
+  });
+}
+function renderBuilder(){
+  if(!$('cb-body')) return;
+  cbStepStrip();
+  const b=$('cb-body');
+  switch(state.cb.step){
+    case 0: cbRenderStep1(b); break;
+    case 1: cbRenderStep2(b); break;
+    case 2: cbRenderStep3(b); break;
+    case 3: cbRenderStep4(b); break;
+    case 4: cbRenderStep5(b); break;
+  }
+}
+
+/* ---------------- prompt ---------------- */
+function dirtyBlocks(page){
+  const out=[];
+  for(const bid in DEFAULTS){
+    if(BLOCKS[bid].page!==page) continue;
+    const L=state.layout[bid], D=DEFAULTS[bid];
+    if(L.x!==D.x||L.y!==D.y||L.w!==D.w||L.h!==D.h||L.fs!==D.fs){
+      const ch=[];
+      if(L.x!==D.x||L.y!==D.y) ch.push(`pos (${L.x},${L.y})`);
+      if(L.w!==D.w||L.h!==D.h) ch.push(`size ${L.w}×${L.h}`);
+      if(L.fs!==D.fs) ch.push(`font ${L.fs}px`);
+      out.push(`    - ${BLOCKS[bid].name} [${BLOCKS[bid].lvgl}]: ${ch.join(', ')}`);
+    }
+  }
+  return out;
+}
+function updatePrompt(){
+  const t=[];
+  t.push('Apply these LVGL UI fixes to the CKP Signal Generator (Guiton JC4827W543, 480×272 landscape, finger touch).');
+  t.push('File: lib/ui_lvgl/ui_lvgl.cpp. Keep src/main.cpp + all backends frozen; preserve the cross-core s_ui_mux');
+  t.push('sync, the categorized pattern dropdown + fuzzy filter, and the allocation-free direct-to-canvas waveform.');
+  t.push('');
+
+  // ---- Finding 4: numeric keypad
+  t.push('[4] NUMERIC KEYPAD (Sweep, Compression):');
+  t.push('  Replace per-digit up/down spinbox editing with a pop-up numeric keypad. When the user taps a numeric');
+  t.push('  value box, open a modal keypad (lv_btnmatrix or a buttons grid on lv_layer_top()) with keys 0–9,');
+  t.push('  Clear, Backspace, and two action keys: "OK" (commit + clamp to the field range, then close) and');
+  t.push('  "Back" (discard, return to the page). Bind it to the focused field; show the field name + valid range.');
+  t.push('  Fields & ranges:');
+  for(const f in FIELDS){const [l,,mn,mx]=FIELDS[f]; t.push(`     • ${f.padEnd(13)} ${l} (${mn}–${mx})  current ${state.fields[f]}`);}
+  t.push('  Keep ≥40px keys for finger touch; the keypad replaces the steppers as the primary entry method.');
+  t.push('');
+
+  // ---- Finding 5 + 6: sweep/comp buttons & arc
+  const sg = state.layout['sweep.apply'].x-(state.layout['sweep.stop'].x+state.layout['sweep.stop'].w);
+  const cg = state.layout['comp.apply'].x-(state.layout['comp.stop'].x+state.layout['comp.stop'].w);
+  t.push('[5] SWEEP & COMPRESSION BUTTON SIZING/SPACING:');
+  t.push(`  STOP/APPLY are oversized & cramped. Use STOP ${state.layout['sweep.stop'].w}×${state.layout['sweep.stop'].h}, `+
+         `APPLY ${state.layout['sweep.apply'].w}×${state.layout['sweep.apply'].h}, with a ${sg}px gap between them on SWEEP`);
+  t.push(`  (and a ${cg}px gap on COMPRESSION). Label font ${state.layout['sweep.stop'].fs}px. Buttons sit on the bottom row,`);
+  t.push('  not filling the page width; give the config rows the freed vertical space.');
+  t.push('');
+  t.push('[6] LIVE / DYNAMIC RPM ARC ON SWEEP & COMPRESSION (the arc must MOVE):');
+  t.push('  Drive lv_arc_set_value at ~10 Hz from the real output RPM so the gauge tracks the action:');
+  t.push(`  • SWEEP: ramp the arc Low(${state.fields['sweep.low']})↔High(${state.fields['sweep.high']}) following the selected Mode`);
+  t.push(`     (${state.menus.sweepmode}); reuse sweepCurrentRpm(). Center value + an up/down indicator follow the sweep.`);
+  t.push(`  • COMPRESSION: show the threshold-gated firing dips — base ≈ held RPM with periodic dips whose DEPTH scales`);
+  t.push(`     with Peak(${state.fields['comp.peak']}) and FREQUENCY with Cylinders(${state.fields['comp.cyl']}); dips fade above RPM Thresh(${state.fields['comp.thr']}).`);
+  t.push('  Arc is dim/zero when output is stopped; create lazily on page-open, lv_obj_del on Back, no per-RPM-step redraw.');
+  t.push('');
+
+  // ---- Finding 7: DSL
+  t.push('[7] DSL EDITOR:');
+  t.push(`  7.1 Remove the live RPM arc from the DSL page; extend the source textarea to fill the screen width`);
+  t.push(`      (≈ ${state.layout['dsl.editor'].w}×${state.layout['dsl.editor'].h} at (${state.layout['dsl.editor'].x},${state.layout['dsl.editor'].y})). Delete arc_dsl_live + its 100ms timer.`);
+  t.push('  7.2 DSL HELP sub-page must SCROLL: the help textarea is taller than the screen and currently shows only the');
+  t.push('      tail. Make it scrollable (LV_OBJ_FLAG_SCROLLABLE / lv_obj_scroll_to_y(0)), start at the top, and ensure');
+  t.push('      flex/height lets the user drag through the whole DSL_HELP_TEXT. Keep Back → DSL page.');
+  t.push('');
+
+  // ---- Tasks 1-3: interaction model
+  t.push('[1-3] INTERACTION MODEL:');
+  t.push('  • All internal numeric value boxes are tap-targets that raise the keypad above; text fields (pattern filter,');
+  t.push('    DSL source) raise the existing on-screen keyboard. Dropdowns (Pattern, Sweep Mode) open their list.');
+  t.push('  • Back on any advanced page commands output OFF before returning to Advanced (existing behavior — keep).');
+  t.push('');
+
+  // ---- CUSTOM TAB: stepped guided DSL builder (TARGET state) ----
+  t.push('[CUSTOM TAB] STEPPED GUIDED DSL BUILDER (new TOP-LEVEL tab: HOME | CUSTOM | ADVANCED):');
+  t.push('  INTERIM-vs-TARGET: Firmware THIS cycle retains the raw DSL editor as the interim custom entry point;');
+  t.push('  this mockup depicts the FINAL state where the stepped builder subsumes it (decision per Cycle-6 plan).');
+  t.push('  The LVGL stepped builder + Output-Waveform widget are DEFERRED to a follow-up cycle.');
+  t.push('  The builder emits a COMPACT colon-joined DSL string fed through the EXISTING dslCompile() (no new backend).');
+  t.push('  5-step flow (single scrollable screen + 1>2>3>4>5 step-strip, fits ~228px under the 44px tabbar):');
+  t.push('   1 Channels — CKP=pin1 (required, C/360); optional CMP1=pin2 / CMP2=pin3 (cam, c). Any cam ⇒ whole pattern 720°,');
+  t.push('     crank wheel repeated 2× internally. Rotation auto-derived (read-only chip), never user-typed. Knock/pin4 not offered.');
+  t.push('   2 Subtype — per enabled channel: Symmetric | Missing | Angular.');
+  t.push('   3 Parameters — conditional show/hide + LIVE validation (strict SUPERSET of the real compiler):');
+  t.push('       Symmetric: duty n/d (n≥1, d≥2, d≤32, n<d) + total_teeth (1..65535 parser uint16); slots=teeth×d (2..4096).');
+  t.push('       Missing:   duty n/d + total_teeth + dynamic run rows {count,t|m} in emission order;');
+  t.push('                  live ledger present+missing == teeth, need ≥1 m (seed 60-2 = 58t,2m).');
+  t.push('       Angular:   dynamic degree rows alternating HIGH/LOW starting HIGH, each>0; live sum == 360(CKP)/720(CMP).');
+  t.push('   4 Preview — Output-Waveform canvas + exact emitted DSL (compact, copyable) + slots N/4096 · span 360|720°.');
+  t.push('   5 Apply — read-only recap; Apply / Apply+Start route the string through dslCompile() and show a');
+  t.push('     DslResult-style OK/error line reusing the DSL-page (lbl_dsl_err) status styling.');
+  t.push('  Current builder state → emitted DSL: '+cbEmitDsl());
+  const _st=cbCompiledStats(), _cc=cbCompile();
+  t.push(`  Compiled: slots ${_st.slots}/4096 · span ${_st.span}° · ${_cc.ok?'OK':'ERR: '+_cc.msg}`);
+  t.push('  OUTPUT-WAVEFORM (drawWaveform): crank=bit0 / cam1=bit1 / cam2=bit2 lanes over a crank-degree x-axis');
+  t.push('  (0..360 or 0..720). The CRANK lane repeats twice across 0..720 (doubled wheel); the CAM lane is plotted ONCE');
+  t.push('  from its own expansion (teeth×d for S/M, Σdeg=720 for Angular) — do NOT double the cam. Shaded labeled');
+  t.push('  missing-gap band, TDC marker at 0°, 90° gridlines, redraw on every field change.');
+  t.push('');
+
+  // ---- DES-5: NEW edit-platform features (do not exist in firmware yet) ----
+  t.push('[EDIT PLATFORM — NEW FEATURES] (these do NOT exist yet — add as new LVGL requirements, not pre-existing):');
+  t.push('  • (NEW) Per-block manual show/hide — state.visible[bid] (default true) + a visibility checkbox in the edit');
+  t.push('    panel + a .hidden class honored in applyBlock, EXCEPT force-visible while in Edit mode so it stays selectable.');
+  t.push('  • (NEW) Editable labels — a text input writing state.label[bid], consumed in applyBlock/regBlock to override');
+  t.push('    the hard-coded FORMS/GEN_BUTTONS/BLOCKS labels.');
+  t.push('  • (NEW) Conditional visibility (state.showIf) — rule hook hiding a builder field unless a prior selection');
+  t.push('    (channel enabled / chosen subtype) matches; drives step-3 show/hide. Edit mode forces visible.');
+  const hidden=Object.keys(state.visible).filter(b=>state.visible[b]===false);
+  const relabeled=Object.keys(state.label).filter(b=>state.label[b]);
+  if(hidden.length) t.push('  Hidden blocks: '+hidden.map(b=>BLOCKS[b]?BLOCKS[b].name:b).join(', '));
+  if(relabeled.length) t.push('  Relabeled: '+relabeled.map(b=>`${BLOCKS[b]?BLOCKS[b].name:b} → "${state.label[b]}"`).join('; '));
+  t.push('');
+
+  // ---- layout deltas
+  t.push('COMPONENT LAYOUT (only changes from the recommended baseline are listed; px from each screen top-left):');
+  let any=false;
+  PAGES.forEach(p=>{const d=dirtyBlocks(p); if(d.length){any=true; t.push(`  ${LABEL[p]}:`); d.forEach(x=>t.push(x));}});
+  if(!any) t.push('  (none — baseline layout accepted as-is)');
+  const bigFonts=[...new Set(Object.values(state.layout).map(L=>L.fs))].filter(f=>f>16).sort((a,b)=>a-b);
+  if(bigFonts.length) t.push(`  NOTE: header font(s) ${bigFonts.join('/')}px need LV_FONT_MONTSERRAT_${bigFonts.join('/')} enabled in lv_conf.h.`);
+  t.push('');
+
+  // ---- theme
+  t.push('THEME (unified HUD palette across every screen/page/dialog incl. the keypad & keyboard):');
+  t.push(`  bg ${state.bg} · surface ${state.surface} · sunken ${state.surface2} · accent ${state.accent}`);
+  t.push(`  warn/invert ${state.warn} · text ${state.text} · muted ${state.muted} · glow ${state.glow?'ON':'OFF'} · buttons ${state.bstyle}.`);
+
+  $('prompt').textContent=t.join('\n');
+}
+
+/* ---------------- wiring ---------------- */
+// presets
+Object.keys(PRESETS).forEach(name=>{const b=document.createElement('button');b.textContent=name;
+  b.onclick=()=>{Object.assign(state,PRESETS[name]);document.querySelectorAll('input[type=color][data-var]').forEach(i=>i.value=state[i.dataset.var]);
+    $('glow').checked=state.glow;render();};$('presets').appendChild(b);});
+// nav
+[['home','Home'],['adv','Adv'],['sweep','Sweep'],['comp','Comp'],['dsl','DSL'],['custom','Custom']]
+  .forEach(([s,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.s=s;b.onclick=()=>goScreen(s);$('nav').appendChild(b);});
+// advanced list rows
+// DSL + custom rows dropped from ADVANCED: the raw DSL editor + custom builder
+// now fold under the top-level CUSTOM tab (DSL editor retained in firmware as
+// the interim entry point; see interim-vs-target note in the brief).
+const ADVROWS=[['sweep','↗','SWEEP','RPM ramp (linear / log / waypoint)'],
+  ['comp','◐','COMPRESSION','cylinder compression emulation'],
+  ['','⎍','WAVEFORM','live 3-lane signal preview (not modeled here)']];
+ADVROWS.forEach(([go,ic,nm,ds])=>{const d=document.createElement('div');d.className='lrow';if(go)d.dataset.go=go;
+  d.innerHTML=`<span class="lic">${ic}</span><span class="lname">${nm}</span><span class="ldesc">${ds}</span>`;$('advbody').appendChild(d);});
+
+// mode toggle
+document.querySelectorAll('#modeseg button').forEach(b=>b.onclick=()=>{
+  state.mode=b.dataset.mode;
+  document.querySelectorAll('#modeseg button').forEach(x=>x.classList.toggle('on',x===b));
+  $('modehint').textContent = state.mode==='edit'
+    ? 'Drag any dashed block to move it; drag the corner handle to resize. Selected block’s X/Y/W/H + font are editable below.'
+    : 'Tap a number box → numeric keypad (OK / Back). Tap the pattern filter or DSL source → on-screen keyboard. Tap dropdowns, START, tiles, Back.';
+  if(state.mode!=='edit') clearSelection();
+  closeAllPops(); render();
+});
+// advanced layout
+document.querySelectorAll('#advseg button').forEach(b=>b.onclick=()=>{state.advLayout=b.dataset.adv;
+  document.querySelectorAll('#advseg button').forEach(x=>x.classList.toggle('on',x===b));render();});
+
+// edit panel numeric inputs
+['x','y','w','h'].forEach(k=>{$('ed_'+k).oninput=e=>{
+  if(!state.selected)return; const v=parseInt(e.target.value)||0;
+  const L=state.layout[state.selected];
+  if(k==='x')L.x=clamp(v,0,480-L.w); if(k==='y')L.y=clamp(v,0,272-L.h);
+  if(k==='w')L.w=clamp(v,24,480-L.x); if(k==='h')L.h=clamp(v,16,272-L.y);
+  applyBlock(state.selected);drawArcs();updatePrompt();};});
+$('ed_fs').oninput=e=>{if(!state.selected)return;state.layout[state.selected].fs=parseInt(e.target.value);
+  $('ed_fs_v').textContent=e.target.value+'px';applyBlock(state.selected);drawArcs();updatePrompt();};
+$('ed_reset').onclick=()=>{if(!state.selected)return;state.layout[state.selected]={...DEFAULTS[state.selected]};
+  state.visible[state.selected]=true; delete state.label[state.selected];
+  applyBlock(state.selected);drawArcs();syncEditPanel();updatePrompt();};
+// DES-5a: visibility toggle for the selected block
+$('ed_vis').onchange=e=>{if(!state.selected)return;state.visible[state.selected]=e.target.checked;
+  applyBlock(state.selected);drawArcs();updatePrompt();};
+// DES-5b: editable label for the selected block
+$('ed_label').oninput=e=>{if(!state.selected)return;const v=e.target.value;
+  if(v==='') delete state.label[state.selected]; else state.label[state.selected]=v;
+  applyBlock(state.selected);updatePrompt();};
+
+// per-page / global resets (DES-5: also restore visibility + clear label overrides)
+$('resetpage').onclick=()=>{for(const bid in DEFAULTS){if(BLOCKS[bid].page===state.screen){state.layout[bid]={...DEFAULTS[bid]};state.visible[bid]=true;delete state.label[bid];}}render();};
+$('resetall').onclick=()=>{for(const bid in DEFAULTS){state.layout[bid]={...DEFAULTS[bid]};state.visible[bid]=true;delete state.label[bid];}render();};
+
+// theme / options
+document.querySelectorAll('input[type=color][data-var]').forEach(i=>i.oninput=()=>{state[i.dataset.var]=i.value;render();});
+$('glow').onchange=e=>{state.glow=e.target.checked;render();};
+$('bstyle').onchange=e=>{state.bstyle=e.target.value;render();};
+$('zoom').oninput=e=>{state.zoom=parseFloat(e.target.value);render();};
+$('outact').onchange=e=>{state.outputActive=e.target.checked;render();};
+$('rpm').oninput=e=>{state.idleRpm=parseInt(e.target.value);if(!state.outputActive)state.rpm=state.idleRpm;$('rpm_v').textContent=state.rpm;drawArcs();};
+$('sweepmode').onchange=e=>{state.sweepMode=e.target.value;state.menus.sweepmode=e.target.value;syncFields();updatePrompt();};
+
+// copy
+$('copy').onclick=()=>{navigator.clipboard.writeText($('prompt').textContent).then(()=>{
+  const b=$('copy'),o=b.textContent;b.textContent='Copied!';setTimeout(()=>b.textContent=o,1200);});};
+
+// keypad action keys
+$('pop-keypad').querySelector('[data-act="kp-ok"]').onclick=kpOk;
+$('pop-keypad').querySelectorAll('[data-act="kp-back"]').forEach(el=>el.onclick=()=>{kpField=null;closeAllPops();});
+
+buildKeypad(); buildKbd();
+render();
+</script>
+</body>
+</html>
