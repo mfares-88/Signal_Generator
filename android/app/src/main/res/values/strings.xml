@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SignalGen Companion</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_custom">Custom</string>
+    <string name="nav_advanced">Advanced</string>
+    <string name="nav_connection">Connection</string>
+
+    <!-- Home screen -->
+    <string name="home_rpm_label">RPM</string>
+    <string name="home_start">Start</string>
+    <string name="home_stop">Stop</string>
+    <string name="home_invert">Invert</string>
+    <string name="home_pattern_label">Pattern</string>
+    <string name="home_channel_mask_label">Channels</string>
+
+    <!-- Connection screen -->
+    <string name="conn_connecting">Connecting…</string>
+    <string name="conn_connected">Connected</string>
+    <string name="conn_disconnected">Disconnected</string>
+    <string name="conn_discovering">Discovering…</string>
+    <string name="conn_manual_ip_hint">Enter board IP address</string>
+    <string name="conn_provision_title">Connect to Board Wi-Fi</string>
+    <string name="conn_provision_ssid_hint">Home Wi-Fi SSID</string>
+    <string name="conn_provision_pass_hint">Home Wi-Fi Password</string>
+    <string name="conn_provision_send">Send Credentials</string>
+    <string name="conn_forget_wifi">Forget Wi-Fi</string>
+
+    <!-- Advanced screen -->
+    <string name="adv_sweep_title">Sweep</string>
+    <string name="adv_comp_title">Compression</string>
+    <string name="adv_capture_title">Capture</string>
+    <string name="adv_capture_start">Start Capture</string>
+    <string name="adv_capture_stop">Stop Capture</string>
+
+    <!-- Waveform -->
+    <string name="waveform_title">Live Waveform</string>
+    <string name="waveform_cursor_simulated">Cursor: RPM-simulated</string>
+    <string name="waveform_digital_levels_note">Digital logic levels — no voltage amplitude</string>
+    <string name="waveform_tooth_freq">Tooth/Edge rate</string>
+    <string name="waveform_crank_rpm">Crank RPM</string>
+    <string name="waveform_delta_time">Δ Time</string>
+    <string name="waveform_delta_angle">Δ Crank Angle</string>
+    <string name="waveform_duty_pct">Duty %</string>
+
+    <!-- DSL Builder -->
+    <string name="dsl_step_channels">Channels</string>
+    <string name="dsl_step_subtype">Subtype</string>
+    <string name="dsl_step_parameters">Parameters</string>
+    <string name="dsl_step_preview">Preview</string>
+    <string name="dsl_step_apply">Apply</string>
+    <string name="dsl_char_count_label">DSL length: %1$d / 512 chars</string>
+    <string name="dsl_apply">Apply</string>
+    <string name="dsl_apply_and_start">Apply + Start</string>
+
+    <!-- Errors / status -->
+    <string name="err_queue_full">Queue full — retry</string>
+    <string name="err_dsl_compile">DSL error at offset %1$d: %2$s</string>
+    <string name="status_ap_mode">AP: %1$s</string>
+    <string name="status_sta_mode">STA: %1$s</string>
+</resources>

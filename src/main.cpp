@@ -36,6 +36,7 @@
 #include "ctrl_msg.h"
 #include "serial_cli.h"
 #include "CaptureRecorder.h"
+#include "wifi_link.h"   // Cycle 7: WiFi transport (Agent F); hooks populated below.
 
 #if defined(SIGGEN_HAS_DISPLAY)
   // S3 build: LVGL is present, full UI surface is compiled in.
@@ -609,6 +610,75 @@ void managerTask(void*) {
 }
 
 // =====================================================
+// Cycle 7 — WiFi link telemetry hooks (Agent E)
+// =====================================================
+//
+// The wifi_link task (Core 0, prio 1) NEVER reaches into this TU's globals.
+// It reads telemetry exclusively through the function-pointer hooks below
+// (WifiLinkTelemetry, declared in lib/wifi_link/wifi_link.h). Each getter
+// returns a single naturally-aligned scalar (or a stable .rodata pointer),
+// so a per-frame snapshot assembled by the wifi task is consistent enough
+// for 5–10 Hz telemetry (no safety-critical field; D8).
+//
+// Semantics notes for the protocol (§4.0 / D15):
+//   - edgeCounter() is a FREE-RUNNING uint16 that WRAPS every 65536 edges
+//     with NO defined zero-phase origin (TableCkpGenerator.h:97). The phone
+//     uses it only for an RPM-SIMULATED live cursor (board-phase-lock is a
+//     future cycle).
+//   - cycleDurationUs() is the FULL-TABLE period: a 720° table spans two
+//     crank revolutions per cycle, so the phone's cursor math divides by the
+//     pattern's `degrees` field, not by 360.
+
+static bool        wlIsRunning()        { return gRunning; }
+static uint32_t    wlCurrentRpm()       { return sweepCurrentRpm(); }
+static uint32_t    wlBaseRpm()          { return g_rpm; }
+static const char* wlActivePatternKey() {
+  // null-guard: fall back to empty string so snprintf("%s") is always safe.
+  return (gActivePattern && gActivePattern->name_key) ? gActivePattern->name_key
+                                                      : "";
+}
+static uint16_t    wlActiveDegrees()    { return gActivePattern ? gActivePattern->degrees      : 0; }
+static uint8_t     wlChannelMask()      { return gActivePattern ? gActivePattern->channel_mask : 0x01; }
+static bool        wlInverted()         { return gInverted; }
+static uint16_t    wlEdgeCounter()      { return gGen.getEdgeCounter(); }
+static uint32_t    wlCycleDurationUs()  { return gGen.getCycleDurationUs(); }
+static uint32_t    wlDropCount() {
+  uint32_t n;
+  portENTER_CRITICAL(&gUiMsgDropMux);
+  n = gUiMsgDropCount;
+  portEXIT_CRITICAL(&gUiMsgDropMux);
+  return n;
+}
+static const char* wlDslError()         { return (const char*)g_dsl_error; }
+
+// onLink: wifi_link pushes IP/SSID/mode here on every interface IP change.
+// Forward to the additive LVGL link-status label (display builds only). The
+// LVGL updater is itself cross-core-safe (stashes under s_ui_mux, applies on
+// the LVGL thread) — we never touch LVGL objects from the wifi task here.
+static void wlOnLink(const char* ip, const char* ssid, const char* mode) {
+#if defined(SIGGEN_HAS_DISPLAY)
+  ui_update_link(ip, ssid, mode);
+#else
+  (void)ip; (void)ssid; (void)mode;
+#endif
+}
+
+static const WifiLinkTelemetry gWifiHooks = {
+  wlIsRunning,
+  wlCurrentRpm,
+  wlBaseRpm,
+  wlActivePatternKey,
+  wlActiveDegrees,
+  wlChannelMask,
+  wlInverted,
+  wlEdgeCounter,
+  wlCycleDurationUs,
+  wlDropCount,
+  wlDslError,
+  wlOnLink,
+};
+
+// =====================================================
 // Arduino setup/loop
 // =====================================================
 
@@ -751,6 +821,15 @@ void setup() {
 
   // ---- Serial CLI ----
   serialCliBegin();
+
+  // ---- Cycle 7: WiFi companion-app transport ----
+  // Spawns the wifi_link task (Core 0, prio 1), brings up WiFi (STA-with-
+  // timeout or SoftAP fallback), advertises mDNS, and serves NDJSON over TCP
+  // 3333. A SECOND transport onto the SAME gCtrlQ — never a new backend.
+  // Must run AFTER gCtrlQ exists + the generator is started (above) so the
+  // first inbound control frame has a live queue and the first telemetry
+  // frame reads a valid snapshot.
+  wifiLinkInit(&gWifiHooks);
 
   ui_update_rpm(gCfg.rpm);
   ui_update_pattern(gPatternIdx);

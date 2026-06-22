@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SignalGen HUD color palette — matches SignalGenTheme.kt -->
+    <color name="sg_bg">#FF0B1020</color>
+    <color name="sg_surface">#FF141C2E</color>
+    <color name="sg_surface_sunken">#FF0F1628</color>
+    <color name="sg_accent">#FF00E5FF</color>
+    <color name="sg_warn">#FFFFB020</color>
+    <color name="sg_text">#FFD7E9FF</color>
+    <color name="sg_muted">#FF7C8DB0</color>
+    <color name="sg_led_off">#FF37425A</color>
+
+    <!-- Waveform lane colors -->
+    <color name="sg_crank">#FF00E5FF</color>
+    <color name="sg_cam1">#FFFFB020</color>
+    <color name="sg_cam2">#FF7CFFB0</color>
+    <color name="sg_cursor">#FFFF4060</color>
+    <color name="sg_gap">#FF3A2030</color>
+    <color name="sg_grid">#FF1B2438</color>
+    <color name="sg_tdc">#FF00E5FF</color>
+
+    <!-- System / launcher icon background -->
+    <color name="launcher_background">#FF0B1020</color>
+</resources>

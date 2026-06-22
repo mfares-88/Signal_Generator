@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!--
+        Exclude DataStore preferences from cloud backup
+        (connection state is ephemeral / device-specific).
+    -->
+    <exclude domain="file" path="datastore/" />
+</full-backup-content>

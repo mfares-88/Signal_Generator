@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Base application theme. The Compose SignalGenTheme (in SignalGenTheme.kt)
+        overrides everything at the Compose level. This XML theme is only used by
+        the system window (status bar, nav bar background) before Compose takes over.
+    -->
+    <style name="Theme.SignalGenCompanion" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/sg_bg</item>
+        <item name="android:statusBarColor">@color/sg_bg</item>
+        <item name="android:navigationBarColor">@color/sg_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

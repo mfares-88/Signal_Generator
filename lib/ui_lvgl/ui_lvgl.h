@@ -45,5 +45,14 @@ void ui_show_error(const char* msg);
 // channel (others are greyed out).
 void ui_update_channels(uint8_t channel_mask, uint8_t invert_mask);
 
+// Cycle 7: WiFi link-status display. Called (cross-core) from the wifi_link
+// task's onLink hook to surface the live IP / SSID / connection mode on a
+// thin status line on the HOME tab (so the manual-IP discovery fallback
+// physically exists). Thread-safe: stashes the strings under s_ui_mux and
+// applies them on the LVGL thread in ui_task_handler() — never touches LVGL
+// objects from the caller's thread. `mode` is e.g. "STA"/"AP"/"CONNECTING"/
+// "DISCONNECTED"; `ip` and `ssid` may be empty. Any argument may be NULL.
+void ui_update_link(const char* ip, const char* ssid, const char* mode);
+
 // Pump LVGL (call often from loop)
 void ui_task_handler();

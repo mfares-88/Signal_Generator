@@ -108,6 +108,10 @@ static lv_obj_t* btn_invert = nullptr;
 static lv_obj_t* lbl_invert = nullptr;
 static lv_obj_t* lbl_error = nullptr;
 
+// Cycle 7: WiFi link-status line (thin caption on the HOME tab) showing the
+// live IP / SSID / mode, e.g. "STA 192.168.1.42" / "AP SignalGen-1A2B".
+static lv_obj_t* lbl_link = nullptr;
+
 // M2.3: channel LEDs (crank, cam1, cam2)
 static lv_obj_t* led_crank = nullptr;
 static lv_obj_t* led_cam1  = nullptr;
@@ -268,6 +272,13 @@ static char s_pending_error_msg[96];
 static volatile bool    s_pending_channels = false;
 static volatile uint8_t s_pending_channel_mask = 0x01;
 static volatile uint8_t s_pending_invert_mask  = 0x00;
+
+// Cycle 7 — pending WiFi link-status update (cross-core). The wifi_link task
+// (Core 0) stashes a preformatted line under s_ui_mux; the LVGL thread applies
+// it to lbl_link in apply_pending_updates(). 48 chars covers
+// "CONNECTING SignalGen-1A2B" / "STA 255.255.255.255" comfortably.
+static volatile bool s_pending_link = false;
+static char          s_pending_link_text[48];
 
 static bool s_suppress_rpm_cb = false;
 static bool s_suppress_pattern_cb = false;
@@ -686,6 +697,17 @@ static void build_home_tab(lv_obj_t* page) {
   lv_obj_set_size(lbl_error, 220, 18);
   lv_label_set_long_mode(lbl_error, LV_LABEL_LONG_DOT);
   lv_obj_add_flag(lbl_error, LV_OBJ_FLAG_HIDDEN);
+
+  // Cycle 7: WiFi link-status line — thin caption, bottom-right under the
+  // action buttons. Shows IP/SSID/mode so the manual-IP discovery fallback
+  // physically exists. Reuses style_caption (montserrat_12, muted text).
+  lbl_link = lv_label_create(page);
+  lv_obj_add_style(lbl_link, &style_caption, 0);
+  lv_label_set_text(lbl_link, "WiFi ...");
+  lv_obj_set_size(lbl_link, 230, 18);
+  lv_label_set_long_mode(lbl_link, LV_LABEL_LONG_DOT);
+  lv_obj_set_style_text_align(lbl_link, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_align(lbl_link, LV_ALIGN_BOTTOM_RIGHT, -2, -2);
 
   update_rpm_label(lv_arc_get_value(arc_rpm));
 }
@@ -1183,6 +1205,28 @@ void ui_update_channels(uint8_t channel_mask, uint8_t invert_mask) {
   portEXIT_CRITICAL(&s_ui_mux);
 }
 
+void ui_update_link(const char* ip, const char* ssid, const char* mode) {
+  // Cross-core safe: format the line OUTSIDE the critical section (no LVGL
+  // calls here — only string ops), then stash it under s_ui_mux. The LVGL
+  // thread applies it to lbl_link in apply_pending_updates(). For STA we show
+  // the IP (the manual-discovery target); for AP we show the SoftAP SSID.
+  const char* m  = mode ? mode : "";
+  const char* id = (ip && ip[0]) ? ip : (ssid ? ssid : "");
+  char line[sizeof(s_pending_link_text)];
+  if (m[0] && id[0]) {
+    snprintf(line, sizeof(line), "%s %s", m, id);
+  } else if (m[0]) {
+    snprintf(line, sizeof(line), "%s", m);
+  } else {
+    snprintf(line, sizeof(line), "%s", id);
+  }
+  portENTER_CRITICAL(&s_ui_mux);
+  strncpy(s_pending_link_text, line, sizeof(s_pending_link_text));
+  s_pending_link_text[sizeof(s_pending_link_text) - 1] = '\0';
+  s_pending_link = true;
+  portEXIT_CRITICAL(&s_ui_mux);
+}
+
 // LED apply — runs on LVGL thread (called from apply_pending_updates).
 static void apply_channel_leds(uint8_t channel_mask, uint8_t invert_mask) {
   struct LedRow { lv_obj_t* led; uint8_t bit; };
@@ -1226,6 +1270,9 @@ static void apply_pending_updates() {
   uint8_t chan_mask = 0x01;
   uint8_t inv_mask  = 0x00;
 
+  bool hasLink = false;
+  char linkText[sizeof(s_pending_link_text)];
+
   portENTER_CRITICAL(&s_ui_mux);
   if (s_pending_rpm) { hasRpm = true; rpm = s_pending_rpm_val; s_pending_rpm = false; }
   if (s_pending_pattern) { hasPattern = true; pattern = s_pending_pattern_val; s_pending_pattern = false; }
@@ -1243,9 +1290,19 @@ static void apply_pending_updates() {
     inv_mask  = s_pending_invert_mask;
     s_pending_channels = false;
   }
+  if (s_pending_link) {
+    hasLink = true;
+    strncpy(linkText, s_pending_link_text, sizeof(linkText));
+    linkText[sizeof(linkText) - 1] = '\0';
+    s_pending_link = false;
+  }
   portEXIT_CRITICAL(&s_ui_mux);
 
   if (hasChannels) apply_channel_leds(chan_mask, inv_mask);
+
+  if (hasLink && lbl_link) {
+    lv_label_set_text(lbl_link, linkText);
+  }
 
   if (hasRpm && arc_rpm) {
     s_suppress_rpm_cb = true;

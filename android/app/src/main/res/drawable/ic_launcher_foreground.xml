@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Launcher icon foreground: a simple signal waveform glyph in cyan.
+    Designed for the 108dp safe zone (72dp actual icon, 36dp inset each side).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Signal waveform path: LOW — RISE — HIGH — FALL — LOW -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="
+            M20,70
+            L20,70
+            L38,70
+            L38,38
+            L70,38
+            L70,70
+            L88,70
+        " />
+
+    <!-- Second (cam) channel, slightly offset -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFB020"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="
+            M20,82
+            L20,82
+            L48,82
+            L48,58
+            L62,58
+            L62,82
+            L88,82
+        " />
+</vector>
