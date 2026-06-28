@@ -16,10 +16,14 @@ graph TB
 
         subgraph Core0["🔵 Core 0 — UI & Display"]
             direction TB
-            LOOP["<b>Arduino loop()</b><br/>10ms tick cycle"]
-            LVGL_PUMP["ui_task_handler()<br/><i>Pumps LVGL rendering</i>"]
-            SERIAL_POLL["serialCliPoll()<br/><i>Drains Serial bytes</i>"]
-            CAP_FETCH["capRX.fetch()<br/><i>Edge pulse check</i>"]
+            LOOP["`**Arduino loop()**
+            10ms tick cycle`"]
+            LVGL_PUMP["`**ui_task_handler()**
+            Pumps LVGL rendering`"]
+            SERIAL_POLL["`**serialCliPoll()**
+            Drains Serial bytes`"]
+            CAP_FETCH["`**capRX.fetch()**
+            Edge pulse check`"]
 
             LOOP --> LVGL_PUMP
             LOOP --> SERIAL_POLL
@@ -28,23 +32,41 @@ graph TB
 
         subgraph Core1["🟢 Core 1 — Real-Time Engine"]
             direction TB
-            MGR["<b>managerTask</b><br/>Priority 3 · 8KB stack<br/><i>Message dispatcher</i>"]
-            SWP["<b>sweepCompTask</b><br/>Priority 2 · 4KB stack<br/><i>1ms tick · sweep + compression</i>"]
-            ISR["<b>GPTimer ISR</b><br/>IRAM_ATTR<br/><i>≤5 statements per alarm</i><br/>dedic_gpio_bundle_write()"]
+            MGR["`**managerTask**
+            Priority 3 - 8KB stack
+            Message dispatcher`"]
+            SWP["`**sweepCompTask**
+            Priority 2 - 4KB stack
+            1ms tick - sweep + compression`"]
+            ISR["`**GPTimer ISR**
+            IRAM_ATTR
+            <=5 statements per alarm
+            dedic_gpio_bundle_write()`"]
         end
 
         subgraph SharedState["📦 Shared State (volatile / portMUX)"]
-            QUEUE["gCtrlQ<br/>FreeRTOS Queue<br/>depth=16 × sizeof(CtrlMsg)"]
-            GLOBALS["g_rpm · g_pattern_key<br/>g_invert_mask<br/>g_sweep_* · g_comp_*"]
-            PENDING["s_pending_rpm<br/>s_pending_pattern<br/>s_pending_running<br/><i>Pending-flag sync pattern</i>"]
+            QUEUE["`**gCtrlQ**
+            FreeRTOS Queue
+            depth=16 x sizeof(CtrlMsg)`"]
+            GLOBALS["`**Shared Globals**
+            g_rpm - g_pattern_key
+            g_invert_mask
+            g_sweep_* - g_comp_*`"]
+            PENDING["`**Pending Flags**
+            s_pending_rpm
+            s_pending_pattern
+            s_pending_running
+            Pending-flag sync pattern`"]
         end
     end
 
     LOOP -.->|"10ms vTaskDelay"| LOOP
-    MGR -->|"xQueueReceive<br/>100ms tick"| QUEUE
+    MGR -->|"`xQueueReceive
+    100ms tick`"| QUEUE
     LVGL_PUMP -.->|"reads pending flags"| PENDING
     MGR -.->|"writes pending flags"| PENDING
-    SWP -->|"gen→setRpm()<br/><i>fast path only</i>"| ISR
+    SWP -->|"`gen->setRpm()
+    fast path only`"| ISR
 
     style Core0 fill:#0d1b3e,stroke:#00E5FF,stroke-width:2px,color:#D7E9FF
     style Core1 fill:#1a2a0d,stroke:#66FF66,stroke-width:2px,color:#D7E9FF
@@ -167,39 +189,77 @@ The `setup()` function follows a strict initialization order. Each subsystem mus
 
 ```mermaid
 flowchart TD
-    BOOT["⚡ Power On / Reset"] --> SERIAL["Serial.begin(921600)<br/><i>Debug output</i>"]
-    SERIAL --> DIAG["Boot diagnostics<br/><i>Flash size, PSRAM, heap</i>"]
-    DIAG --> FS["initLittleFS()<br/><i>Mount LittleFS partition</i><br/><i>(no-op on WROOM)</i>"]
-    FS --> FS_SMOKE["littleFsSmokeTest()<br/><i>Write + readback /test.txt</i>"]
+    BOOT["⚡ **Power On / Reset**"] --> SERIAL["`**Serial.begin(921600)**
+    Debug output`"]
+    SERIAL --> DIAG["`**Boot diagnostics**
+    Flash size, PSRAM, heap`"]
+    DIAG --> FS["`**initLittleFS()**
+    Mount LittleFS partition
+    (no-op on WROOM)`"]
+    FS --> FS_SMOKE["`**littleFsSmokeTest()**
+    Write + readback /test.txt`"]
 
-    FS_SMOKE --> NVS_BEGIN["NvsStore::begin()<br/><i>Open 'siggen' namespace</i><br/><i>Schema v1 check + migration</i>"]
-    NVS_BEGIN --> NVS_LOAD["NvsStore::loadAllToGlobals()<br/><i>Populate g_rpm, g_pattern_key,</i><br/><i>g_invert_mask, g_sweep_*, g_comp_*</i><br/><i>Missing keys → factory defaults</i>"]
+    FS_SMOKE --> NVS_BEGIN["`**NvsStore::begin()**
+    Open 'siggen' namespace
+    Schema v1 check + migration`"]
+    NVS_BEGIN --> NVS_LOAD["`**NvsStore::loadAllToGlobals()**
+    Populate g_rpm, g_pattern_key,
+    g_invert_mask, g_sweep_*, g_comp_*
+    Missing keys -> factory defaults`"]
 
-    NVS_LOAD --> GEN_INIT["gGen.begin(PIN17, PIN9, PIN14)<br/><i>Constructor: TableCkpGenerator()</i><br/><i>• Validate all 3 GPIO pins</i><br/><i>• Create GPTimer @ 1MHz</i><br/><i>• Build dedic_gpio bundle</i>"]
+    NVS_LOAD --> GEN_INIT["`**gGen.begin(PIN17, PIN9, PIN14)**
+    Constructor: TableCkpGenerator()
+    - Validate all 3 GPIO pins
+    - Create GPTimer @ 1MHz
+    - Build dedic_gpio bundle`"]
 
-    GEN_INIT --> SWP_INIT["sweepCompressionInit(&gGen)<br/><i>• Create mutex</i><br/><i>• Spawn sweepCompTask</i><br/><i>  Core 1, Priority 2, 4KB</i>"]
+    GEN_INIT --> SWP_INIT["`**sweepCompressionInit(&gGen)**
+    - Create mutex
+    - Spawn sweepCompTask
+      Core 1, Priority 2, 4KB`"]
 
-    SWP_INIT --> CAP_INIT["capRX.begin(PIN18)<br/><i>EdgePulseCapture ISR setup</i>"]
+    SWP_INIT --> CAP_INIT["`**capRX.begin(PIN18)**
+    EdgePulseCapture ISR setup`"]
 
-    CAP_INIT --> UI_INIT["ui_init(callbacks...)<br/><i>• lv_init() + display driver</i><br/><i>• Touch controller (GT911)</i><br/><i>• Build LVGL widget tree</i><br/><i>• 480×272 landscape</i>"]
+    CAP_INIT --> UI_INIT["`**ui_init(callbacks...)**
+    - lv_init() + display driver
+    - Touch controller (GT911)
+    - Build LVGL widget tree
+    - 480x272 landscape`"]
 
-    UI_INIT --> QUEUE_CREATE["xQueueCreate(16, sizeof(CtrlMsg))<br/><i>gCtrlQ — central command queue</i>"]
+    UI_INIT --> QUEUE_CREATE["`**xQueueCreate(16, sizeof(CtrlMsg))**
+    gCtrlQ - central command queue`"]
 
-    QUEUE_CREATE --> TASK_CREATE["xTaskCreatePinnedToCore(<br/>  managerTask, 'managerTask',<br/>  8192, nullptr, <b>priority=3</b>,<br/>  nullptr, <b>core=1</b>)"]
+    QUEUE_CREATE --> TASK_CREATE["`**xTaskCreatePinnedToCore()**
+    managerTask, 'managerTask',
+    8192, nullptr, priority=3,
+    nullptr, core=1`"]
 
-    TASK_CREATE --> RESTORE_PAT["Restore Pattern from NVS<br/><i>findByKey(g_pattern_key)</i><br/><i>→ fallback builtinByIndex(0)</i><br/><i>→ gGen.apply(ref, rpm)</i>"]
+    TASK_CREATE --> RESTORE_PAT["`**Restore Pattern from NVS**
+    findByKey(g_pattern_key)
+    -> fallback builtinByIndex(0)
+    -> gGen.apply(ref, rpm)`"]
 
-    RESTORE_PAT --> RESTORE_SWEEP["Restore Sweep + Compression<br/><i>sweepSet(saved_config)</i><br/><i>compressionSet(saved_config)</i>"]
+    RESTORE_PAT --> RESTORE_SWEEP["`**Restore Sweep + Compression**
+    sweepSet(saved_config)
+    compressionSet(saved_config)`"]
 
-    RESTORE_SWEEP --> RESTORE_INV["Restore Invert Mask<br/><i>gGen.setInverted(g_invert_mask)</i>"]
+    RESTORE_SWEEP --> RESTORE_INV["`**Restore Invert Mask**
+    gGen.setInverted(g_invert_mask)`"]
 
-    RESTORE_INV --> START["gGen.start()<br/><i>Enable GPTimer alarm</i><br/><i>ISR begins firing</i>"]
+    RESTORE_INV --> START["`**gGen.start()**
+    Enable GPTimer alarm
+    ISR begins firing`"]
 
-    START --> CLI_INIT["serialCliBegin()<br/><i>Serial CLI ready</i>"]
+    START --> CLI_INIT["`**serialCliBegin()**
+    Serial CLI ready`"]
 
-    CLI_INIT --> UI_SYNC["UI sync: update_rpm, pattern,<br/>running, inverted, channels"]
+    CLI_INIT --> UI_SYNC["`**UI sync**
+    update_rpm, pattern,
+    running, inverted, channels`"]
 
-    UI_SYNC --> LOOP_START["→ loop() begins<br/><i>10ms cadence forever</i>"]
+    UI_SYNC --> LOOP_START["`**-> loop() begins**
+    10ms cadence forever`"]
 
     style BOOT fill:#1a3a1a,stroke:#66FF66,stroke-width:2px,color:#D7E9FF
     style LOOP_START fill:#0d2b4e,stroke:#00E5FF,stroke-width:2px,color:#D7E9FF
@@ -217,29 +277,67 @@ All user inputs (touch screen, serial port) are funneled through a single FreeRT
 flowchart LR
     subgraph Producers["📤 Message Producers"]
         direction TB
-        UI_CB["LVGL UI Callbacks<br/><i>on_ui_rpm()</i><br/><i>on_ui_pattern()</i><br/><i>on_ui_run()</i><br/><i>on_ui_custom()</i><br/><i>on_ui_invert()</i>"]
-        SERIAL["Serial CLI<br/><i>Legacy binary opcodes</i><br/><i>Text commands (LIST,</i><br/><i>SELECT, COMPILE, etc.)</i>"]
+        UI_CB["`**LVGL UI Callbacks**
+        on_ui_rpm()
+        on_ui_pattern()
+        on_ui_run()
+        on_ui_custom()
+        on_ui_invert()`"]
+        SERIAL["`**Serial CLI**
+        Legacy binary opcodes
+        Text commands (LIST,
+        SELECT, COMPILE, etc.)`"]
     end
 
-    QUEUE["gCtrlQ<br/>FreeRTOS Queue<br/>16 slots"]
+    QUEUE["`**gCtrlQ**
+    FreeRTOS Queue
+    16 slots`"]
 
     subgraph Consumer["📥 managerTask (Core 1, P3)"]
         direction TB
         DISPATCH{{"switch(m.type)"}}
 
-        MSG_RPM["MSG_SET_RPM<br/><i>clamp 100..6000</i><br/><i>gen.setRpm() ←fast path</i><br/><i>NvsStore::setRpmDebounced()</i>"]
-        MSG_PAT["MSG_SET_PATTERN<br/><i>Legacy 5-preset path</i><br/><i>(WROOM only)</i>"]
-        MSG_BUILTIN["MSG_SELECT_BUILTIN<br/><i>PatternLibrary::builtinByIndex()</i><br/><i>→ applyPatternRef()</i><br/><i>→ gen.apply(ref, rpm)</i>"]
-        MSG_NAMED["MSG_SELECT_NAMED<br/><i>PatternLibrary::findByKey()</i><br/><i>→ applyPatternRef()</i>"]
-        MSG_CUSTOM["MSG_SET_CUSTOM<br/><i>dslCompileSignalConfig(cfg)</i><br/><i>→ DSL pipeline → PatternRef</i><br/><i>→ gen.apply()</i>"]
-        MSG_DSL["MSG_LOAD_DSL<br/><i>dslCompile(source)</i><br/><i>→ register as 'scratch_dsl'</i><br/><i>→ gen.apply()</i>"]
-        MSG_START["MSG_START / MSG_STOP<br/><i>gen.start() / gen.stop()</i>"]
-        MSG_INV["MSG_SET_INVERT<br/><i>gen.setInverted(mask)</i><br/><i>NvsStore::setInvertMask()</i>"]
-        MSG_SWEEP["MSG_SET_SWEEP<br/><i>sweepSet(config)</i><br/><i>NvsStore::setSweep()</i>"]
-        MSG_COMP["MSG_SET_COMPRESSION<br/><i>compressionSet(config)</i><br/><i>NvsStore::setCompression()</i>"]
-        MSG_CAP["MSG_CAPTURE_START/STOP<br/><i>captureStart(pin, revs)</i><br/><i>captureFetchPattern()</i>"]
-        MSG_SAVE["MSG_SAVE_USER<br/><i>PatternStorage::saveDsl()</i>"]
-        MSG_TABLE["MSG_LOAD_TABLE<br/><i>Build PatternRef from raw bytes</i><br/><i>→ gen.apply()</i>"]
+        MSG_RPM["`**MSG_SET_RPM**
+        clamp 100..6000
+        gen.setRpm() <- fast path
+        NvsStore::setRpmDebounced()`"]
+        MSG_PAT["`**MSG_SET_PATTERN**
+        Legacy 5-preset path
+        (WROOM only)`"]
+        MSG_BUILTIN["`**MSG_SELECT_BUILTIN**
+        PatternLibrary::builtinByIndex()
+        -> applyPatternRef()
+        -> gen.apply(ref, rpm)`"]
+        MSG_NAMED["`**MSG_SELECT_NAMED**
+        PatternLibrary::findByKey()
+        -> applyPatternRef()`"]
+        MSG_CUSTOM["`**MSG_SET_CUSTOM**
+        dslCompileSignalConfig(cfg)
+        -> DSL pipeline -> PatternRef
+        -> gen.apply()`"]
+        MSG_DSL["`**MSG_LOAD_DSL**
+        dslCompile(source)
+        -> register as 'scratch_dsl'
+        -> gen.apply()`"]
+        MSG_START["`**MSG_START / MSG_STOP**
+        gen.start() / gen.stop()`"]
+        MSG_INV["`**MSG_SET_INVERT**
+        gen.setInverted(mask)
+        NvsStore::setInvertMask()`"]
+        MSG_SWEEP["`**MSG_SET_SWEEP**
+        sweepSet(config)
+        NvsStore::setSweep()`"]
+        MSG_COMP["`**MSG_SET_COMPRESSION**
+        compressionSet(config)
+        NvsStore::setCompression()`"]
+        MSG_CAP["`**MSG_CAPTURE_START/STOP**
+        captureStart(pin, revs)
+        captureFetchPattern()`"]
+        MSG_SAVE["`**MSG_SAVE_USER**
+        PatternStorage::saveDsl()`"]
+        MSG_TABLE["`**MSG_LOAD_TABLE**
+        Build PatternRef from raw bytes
+        -> gen.apply()`"]
     end
 
     UI_CB -->|"sendCtrlMsg()"| QUEUE
@@ -276,33 +374,79 @@ flowchart TB
         direction TB
 
         subgraph HOME["🏠 HOME Tab"]
-            ARC["RPM Arc<br/><i>Range 100–6000</i><br/><i>on_arc_changed → MSG_SET_RPM</i>"]
-            DD["Pattern Dropdown<br/><i>64+ builtin patterns</i><br/><i>with fuzzy search filter</i><br/><i>on_pattern_changed → MSG_SELECT_BUILTIN</i>"]
-            BTN_RUN["RUN/STOP Button<br/><i>on_run_clicked → MSG_START/STOP</i>"]
-            BTN_INV["INVERT Button<br/><i>on_invert_clicked → MSG_SET_INVERT</i>"]
-            LEDS["Channel LEDs<br/><i>Crank · CAM1 · CAM2</i><br/><i>Green=active, Grey=unused</i>"]
-            ERR["Error Label<br/><i>Shows gen errors / DSL errors</i>"]
+            ARC["`**RPM Arc**
+            Range 100-6000
+            on_arc_changed -> MSG_SET_RPM`"]
+            DD["`**Pattern Dropdown**
+            64+ builtin patterns
+            with fuzzy search filter
+            on_pattern_changed -> MSG_SELECT_BUILTIN`"]
+            BTN_RUN["`**RUN/STOP Button**
+            on_run_clicked -> MSG_START/STOP`"]
+            BTN_INV["`**INVERT Button**
+            on_invert_clicked -> MSG_SET_INVERT`"]
+            LEDS["`**Channel LEDs**
+            Crank - CAM1 - CAM2
+            Green=active, Grey=unused`"]
+            ERR["`**Error Label**
+            Shows gen errors / DSL errors`"]
         end
 
         subgraph ADV["⚙️ ADVANCED Tab → Full-Screen Overlays"]
             direction LR
-            SWEEP_PAGE["Sweep Page<br/><i>Low/High RPM spinboxes</i><br/><i>Mode: OFF/Linear/Log/Waypoint</i><br/><i>Interval spinner</i><br/><i>Live RPM arc + status pill</i><br/><i>→ MSG_SET_SWEEP</i>"]
-            COMP_PAGE["Compression Page<br/><i>Enable switch</i><br/><i>Cylinders / Threshold / Peak</i><br/><i>Dynamic toggle</i><br/><i>Live RPM arc + status pill</i><br/><i>→ MSG_SET_COMPRESSION</i>"]
-            DSL_PAGE["DSL Editor Page<br/><i>Source textarea + keyboard</i><br/><i>Compile / Save As / Load</i><br/><i>Help sub-page overlay</i><br/><i>Error polling timer (200ms)</i><br/><i>→ MSG_LOAD_DSL / MSG_SAVE_USER</i>"]
-            WAVE_PAGE["Waveform Canvas<br/><i>3-lane oscilloscope view</i><br/><i>Crank + CAM1 + CAM2</i><br/><i>Pinch-zoom Q24.8 model</i><br/><i>Pan, pause, lane toggle</i><br/><i>→ reads getEdgeCounter()</i>"]
-            CUSTOM_PAGE["Custom Pattern Page<br/><i>Teeth/Periods/Missing spinboxes</i><br/><i>Gap position dropdown</i><br/><i>Gap level switch</i><br/><i>→ MSG_SET_CUSTOM</i>"]
+            SWEEP_PAGE["`**Sweep Page**
+            Low/High RPM spinboxes
+            Mode: OFF/Linear/Log/Waypoint
+            Interval spinner
+            Live RPM arc + status pill
+            -> MSG_SET_SWEEP`"]
+            COMP_PAGE["`**Compression Page**
+            Enable switch
+            Cylinders / Threshold / Peak
+            Dynamic toggle
+            Live RPM arc + status pill
+            -> MSG_SET_COMPRESSION`"]
+            DSL_PAGE["`**DSL Editor Page**
+            Source textarea + keyboard
+            Compile / Save As / Load
+            Help sub-page overlay
+            Error polling timer (200ms)
+            -> MSG_LOAD_DSL / MSG_SAVE_USER`"]
+            WAVE_PAGE["`**Waveform Canvas**
+            3-lane oscilloscope view
+            Crank + CAM1 + CAM2
+            Pinch-zoom Q24.8 model
+            Pan, pause, lane toggle
+            -> reads getEdgeCounter()`"]
+            CUSTOM_PAGE["`**Custom Pattern Page**
+            Teeth/Periods/Missing spinboxes
+            Gap position dropdown
+            Gap level switch
+            -> MSG_SET_CUSTOM`"]
         end
     end
 
     subgraph SYNC["Cross-Core Pending-Flag Sync"]
         direction LR
-        BACKEND["managerTask<br/>(Core 1)"]
-        FLAGS["volatile bool<br/>s_pending_rpm<br/>s_pending_pattern<br/>s_pending_running<br/>s_pending_error<br/>s_pending_channels"]
-        APPLY["apply_pending_updates()<br/><i>Called every ui_task_handler()</i><br/><i>portENTER_CRITICAL / portEXIT_CRITICAL</i>"]
+        BACKEND["`**managerTask**
+        (Core 1)`"]
+        FLAGS["`**Volatile Flags**
+        volatile bool
+        s_pending_rpm
+        s_pending_pattern
+        s_pending_running
+        s_pending_error
+        s_pending_channels`"]
+        APPLY["`**apply_pending_updates()**
+        Called every ui_task_handler()
+        portENTER_CRITICAL / portEXIT_CRITICAL`"]
 
-        BACKEND -->|"ui_update_rpm(val)<br/>sets flag + val"| FLAGS
+        BACKEND -->|"`ui_update_rpm(val)
+        sets flag + val`"| FLAGS
         FLAGS -->|"checked each tick"| APPLY
-        APPLY -->|"lv_arc_set_value()<br/>lv_label_set_text()<br/>..."| HOME
+        APPLY -->|"`lv_arc_set_value()
+        lv_label_set_text()
+        ...`"| HOME
     end
 
     style UI_PAGES fill:#0B1020,stroke:#00E5FF,stroke-width:2px,color:#D7E9FF
@@ -319,17 +463,50 @@ The Domain-Specific Language lets users define arbitrary crank/cam patterns at r
 
 ```mermaid
 flowchart LR
-    SRC["DSL Source String<br/><i>'1,C,M,1/2,60,58t,2m'</i>"]
+    SRC["`**DSL Source String**
+    '1,C,M,1/2,60,58t,2m'`"]
 
     subgraph PIPELINE["DSL Compiler Pipeline (lib/dsl/)"]
         direction LR
-        LEX["<b>Lexer</b><br/><i>Tokenizer</i><br/>─────────<br/>TOK_INT · TOK_FRACTION<br/>TOK_INT_SUFFIXED<br/>TOK_LETTER · TOK_COMMA<br/>TOK_COLON · TOK_EOF"]
+        LEX["`**Lexer**
+        Tokenizer
+        ---------
+        TOK_INT - TOK_FRACTION
+        TOK_INT_SUFFIXED
+        TOK_LETTER - TOK_COMMA
+        TOK_COLON - TOK_EOF`"]
 
-        PARSE["<b>Parser</b><br/><i>Recursive Descent</i><br/>───────────────<br/>ProgramAst {<br/>  wheels: WheelDef[]<br/>}<br/>WheelDef {<br/>  pin, rotation, kind,<br/>  duty, total_teeth,<br/>  runs[], angular[]<br/>}"]
+        PARSE["`**Parser**
+        Recursive Descent
+        ---------------
+        ProgramAst {
+          wheels: WheelDef[]
+        }
+        WheelDef {
+          pin, rotation, kind,
+          duty, total_teeth,
+          runs[], angular[]
+        }`"]
 
-        VAL["<b>Validator</b><br/><i>12 Semantic Rules (§7.5)</i><br/>─────────────────<br/>#1 pin ∈ {1..4}<br/>#2 pins unique<br/>#3 duty 0<n<d, d≤32<br/>#4 teeth > 0<br/>#5 sum(t+m)=teeth<br/>#9 table ≤ 4096 slots<br/>#11 source ≤ 512 chars"]
+        VAL["`**Validator**
+        12 Semantic Rules (section 7.5)
+        -----------------
+        #1 pin in {1..4}
+        #2 pins unique
+        #3 duty 0 < n < d, d <= 32
+        #4 teeth > 0
+        #5 sum(t+m)=teeth
+        #9 table <= 4096 slots
+        #11 source <= 512 chars`"]
 
-        COMP["<b>Compiler</b><br/><i>AST → Byte Table</i><br/>─────────────────<br/>• Compute LCM across wheels<br/>• Pack bit0=crank, bit1=cam1<br/>  bit2=cam2 per slot<br/>• Allocate in PSRAM via<br/>  heap_caps_malloc(SPIRAM)"]
+        COMP["`**Compiler**
+        AST -> Byte Table
+        -----------------
+        - Compute LCM across wheels
+        - Pack bit0=crank, bit1=cam1
+          bit2=cam2 per slot
+        - Allocate in PSRAM via
+          heap_caps_malloc(SPIRAM)`"]
 
         LEX -->|"Token stream"| PARSE
         PARSE -->|"ProgramAst*"| VAL
@@ -338,12 +515,22 @@ flowchart LR
 
     SRC --> LEX
 
-    RESULT["DslResult {<br/>  ok: bool<br/>  pattern: PatternRef<br/>  error[96]<br/>  error_offset<br/>}"]
+    RESULT["`**DslResult**
+    {
+      ok: bool
+      pattern: PatternRef
+      error[96]
+      error_offset
+    }`"]
 
     COMP --> RESULT
 
-    SIGCFG["SignalConfig<br/><i>Legacy custom modal</i>"]
-    SHIM["dslCompileSignalConfig()<br/><i>Synthesizes DSL source</i><br/><i>from teeth/miss params</i><br/><i>then feeds dslCompile()</i>"]
+    SIGCFG["`**SignalConfig**
+    Legacy custom modal`"]
+    SHIM["`**dslCompileSignalConfig()**
+    Synthesizes DSL source
+    from teeth/miss params
+    then feeds dslCompile()`"]
 
     SIGCFG --> SHIM
     SHIM --> SRC
@@ -362,30 +549,87 @@ flowchart TB
     subgraph TIERS["PatternLibrary — 3-Tier Registry"]
         direction TB
 
-        BUILTIN["🔷 <b>Builtin Tier</b><br/><i>Static const PatternRef[]</i><br/><i>in .rodata (flash)</i><br/>──────────────────<br/>Generated by:<br/>tools/convert_ardustim_wheels.py<br/>→ builtin_tables_generated.h<br/>→ pattern_names_generated.h<br/>→ pattern_legacy_index_generated.h<br/>──────────────────<br/>64+ patterns: 60-2, 36-1,<br/>GM LS1, Honda K20, etc.<br/>Immutable at runtime"]
+        BUILTIN["`**Builtin Tier**
+        Static const PatternRef[]
+        in .rodata (flash)
+        ------------------
+        Generated by:
+        tools/convert_ardustim_wheels.py
+        -> builtin_tables_generated.h
+        -> pattern_names_generated.h
+        -> pattern_legacy_index_generated.h
+        ------------------
+        64+ patterns: 60-2, 36-1,
+        GM LS1, Honda K20, etc.
+        Immutable at runtime`"]
 
-        USER["🟡 <b>User Tier</b><br/><i>Up to 16 runtime entries</i><br/><i>kUserCapacity = 16</i><br/>──────────────────<br/>Sources:<br/>• DSL editor 'Save As'<br/>• Captured waveforms<br/>• Serial CLI 'SAVE' command<br/>──────────────────<br/>PatternRef stored by value<br/>.table → PSRAM heap<br/>.name_key → caller-owned"]
+        USER["`**User Tier**
+        Up to 16 runtime entries
+        kUserCapacity = 16
+        ------------------
+        Sources:
+        - DSL editor 'Save As'
+        - Captured waveforms
+        - Serial CLI 'SAVE' command
+        - PatternRef stored by value
+        - table -> PSRAM heap
+        - name_key -> caller-owned`"]
 
-        SCRATCH["🟠 <b>Scratch</b><br/><i>s_scratch_dsl</i><br/>──────────────────<br/>Transient unsaved DSL<br/>compilation result<br/>Manager-owned lifetime<br/>Freed on next compile or<br/>when switching to builtin"]
+        SCRATCH["`**Scratch**
+        s_scratch_dsl
+        ------------------
+        Transient unsaved DSL
+        compilation result
+        Manager-owned lifetime
+        Freed on next compile or
+        when switching to builtin`"]
     end
 
     subgraph PERSIST["Persistence Backends"]
         direction TB
-        NVS["<b>NvsStore</b><br/><i>ESP32 NVS (key-value flash)</i><br/>──────────────────<br/>Namespace: 'siggen'<br/>Schema v1 (versioned)<br/>──────────────────<br/>Keys stored:<br/>• pattern_key (string, 64B)<br/>• rpm (uint32)<br/>• invert_mask (uint8)<br/>• sweep_* (4 keys)<br/>• comp_* (5 keys)<br/>──────────────────<br/>Debounced RPM writes<br/>(750ms window)"]
+        NVS["`**NvsStore**
+        ESP32 NVS (key-value flash)
+        ------------------
+        Namespace: 'siggen'
+        Schema v1 (versioned)
+        ------------------
+        Keys stored:
+        - pattern_key (string, 64B)
+        - rpm (uint32)
+        - invert_mask (uint8)
+        - sweep_* (4 keys)
+        - comp_* (5 keys)
+        ------------------
+        Debounced RPM writes
+        (750ms window)`"]
 
-        LITTLEFS["<b>PatternStorage</b><br/><i>LittleFS partition</i><br/><i>(S3 only, gated on flag)</i><br/>──────────────────<br/>/patterns/‹key›.dsl<br/>  → UTF-8 DSL source<br/>/patterns/‹key›.bin<br/>  → SHA-256 + metadata<br/>    + compiled byte table<br/>──────────────────<br/>Cache invalidation:<br/>SHA-256 mismatch → recompile"]
+        LITTLEFS["`**PatternStorage**
+        LittleFS partition
+        (S3 only, gated on flag)
+        ------------------
+        /patterns/key.dsl
+          -> UTF-8 DSL source
+        /patterns/key.bin
+          -> SHA-256 + metadata
+            + compiled byte table
+        ------------------
+        Cache invalidation:
+        SHA-256 mismatch -> recompile`"]
     end
 
-    BUILTIN -->|"findByKey(key)"| LOOKUP["PatternLibrary::findByKey()<br/><i>Searches: builtin → user → scratch</i>"]
+    BUILTIN -->|"findByKey(key)"| LOOKUP["`**PatternLibrary::findByKey()**
+    Searches: builtin -> user -> scratch`"]
     USER -->|"findByKey(key)"| LOOKUP
     SCRATCH -.->|"(future)"| LOOKUP
 
-    BUILTIN -->|"builtinByIndex(i)"| INDEX["PatternLibrary::builtinByIndex()<br/><i>Direct array index</i>"]
+    BUILTIN -->|"builtinByIndex(i)"| INDEX["`**PatternLibrary::builtinByIndex()**
+    Direct array index`"]
 
     USER -->|"registerUserPattern()"| LITTLEFS
-    LITTLEFS -->|"loadDsl() → dslCompile()"| USER
+    LITTLEFS -->|"loadDsl() -> dslCompile()"| USER
 
-    LOOKUP -->|"Resolved PatternRef"| APPLY_FN["gGen.apply(ref, rpm)<br/><i>Active playback begins</i>"]
+    LOOKUP -->|"Resolved PatternRef"| APPLY_FN["`**gGen.apply(ref, rpm)**
+    Active playback begins`"]
 
     NVS -->|"g_pattern_key on boot"| LOOKUP
 
@@ -404,30 +648,48 @@ flowchart TB
     subgraph TASK["sweepCompTask (Core 1, P2, 1ms tick)"]
         direction TB
         TICK["vTaskDelayUntil(1ms)"]
-        READ_CFG["cfgLock() → copy SweepConfig + CompressionConfig → cfgUnlock()"]
+        READ_CFG["cfgLock() -> copy SweepConfig + CompressionConfig -> cfgUnlock()"]
 
-        IDLE_CHECK{"sweep.mode == OFF<br/>AND !comp.enabled?"}
+        IDLE_CHECK{"sweep.mode == OFF\nAND !comp.enabled?"}
 
         subgraph SWEEP["Sweep Phase"]
             direction TB
             SW_DISPATCH{{"sweep.mode?"}}
-            LINEAR["sweepStepLinear()<br/><i>±1 RPM per interval_us</i><br/><i>Ping-pong between</i><br/><i>low_rpm ↔ high_rpm</i>"]
-            LOG["sweepStepLog()<br/><i>Exponential ramp</i><br/><i>rpm = low × (high/low)^(t/period)</i><br/><i>Uses powf() (HW FP)</i>"]
-            WAYPOINT["sweepStepWaypoint()<br/><i>Packed (rpm, dwell_ms) pairs</i><br/><i>Linear interp between segments</i>"]
+            LINEAR["`**sweepStepLinear()**
+            +/-1 RPM per interval_us
+            Ping-pong between
+            low_rpm <-> high_rpm`"]
+            LOG["`**sweepStepLog()**
+            Exponential ramp
+            rpm = low x (high/low)^(t/period)
+            Uses powf() (HW FP)`"]
+            WAYPOINT["`**sweepStepWaypoint()**
+            Packed (rpm, dwell_ms) pairs
+            Linear interp between segments`"]
         end
 
         subgraph COMPRESSION["Compression Phase"]
             direction TB
-            ANGLE["currentCrankAngle(offset_deg)<br/><i>Uses getCycleStartUs() +</i><br/><i>getCycleDurationUs() from ISR</i>"]
+            ANGLE["`**currentCrankAngle(offset_deg)**
+            Uses getCycleStartUs() +
+            getCycleDurationUs() from ISR`"]
             LUT_SELECT{{"comp.cyl?"}}
-            SIN180["sin_100_180[180]<br/><i>1-cyl, 2-cyl</i>"]
-            SIN120["sin_100_120[120]<br/><i>3-cyl</i>"]
-            SIN90["sin_100_90[90]<br/><i>4-cyl, 6+cyl</i>"]
-            CUSTOM_CURVE["custom_curve_256[256]<br/><i>User-supplied override</i>"]
-            SCALE["Scale by peak (0..100)<br/>Dynamic: × (rpm/thresh)<br/><i>if rpm < 655 (AVR guard)</i>"]
+            SIN180["`**sin_100_180[180]**
+            1-cyl, 2-cyl`"]
+            SIN120["`**sin_100_120[120]**
+            3-cyl`"]
+            SIN90["`**sin_100_90[90]**
+            4-cyl, 6+cyl`"]
+            CUSTOM_CURVE["`**custom_curve_256[256]**
+            User-supplied override`"]
+            SCALE["`**Scale by peak (0..100)**
+            Dynamic: x (rpm/thresh)
+            if rpm < 655 (AVR guard)`"]
         end
 
-        FINAL["target = base_rpm − modifier<br/>gen→setRpm(target)<br/><i>Fast path, no buffer rebuild</i>"]
+        FINAL["`**target = base_rpm - modifier**
+        gen->setRpm(target)
+        Fast path, no buffer rebuild`"]
     end
 
     TICK --> READ_CFG --> IDLE_CHECK
@@ -472,17 +734,46 @@ flowchart LR
     subgraph CAPTURE["Capture Subsystem (lib/ckp_capture/)"]
         direction TB
 
-        EDGE["<b>EdgePulseCapture</b><br/><i>Low-level ISR-based</i><br/><i>edge timing capture</i><br/>───────────────<br/>• Pin interrupt handler<br/>• Measures period_us,<br/>  high_us, timestamp_us<br/>• FreeRTOS queue → fetch()"]
+        EDGE["`**EdgePulseCapture**
+        Low-level ISR-based
+        edge timing capture
+        ---------------
+        - Pin interrupt handler
+        - Measures period_us,
+          high_us, timestamp_us
+        - FreeRTOS queue -> fetch()`"]
 
-        RECORDER["<b>CaptureRecorder</b><br/><i>High-level capture API</i><br/>───────────────<br/>captureStart(pin, revolutions)<br/>  → Arms ISR, records N revs<br/>  → Post-processes into<br/>     byte-packed slot table<br/>captureFetchPattern(out)<br/>  → Returns PatternRef<br/>  → .table in PSRAM"]
+        RECORDER["`**CaptureRecorder**
+        High-level capture API
+        ---------------
+        captureStart(pin, revolutions)
+          -> Arms ISR, records N revs
+          -> Post-processes into
+             byte-packed slot table
+        captureFetchPattern(out)
+          -> Returns PatternRef
+          -> .table in PSRAM`"]
 
-        LOOPBACK["<b>Loopback Validator</b><br/>───────────────<br/>loopbackEnable(expected, tol)<br/>captureLoopbackTick(rpm)<br/>  → 100ms poll from manager<br/>  → Compares captured edges<br/>    vs expected pattern<br/>captureLoopbackHasError()<br/>  → Sticky error flag<br/>  → Surfaces to UI via<br/>    g_loopback_error[96]"]
+        LOOPBACK["`**Loopback Validator**
+        ---------------
+        loopbackEnable(expected, tol)
+        captureLoopbackTick(rpm)
+          -> 100ms poll from manager
+          -> Compares captured edges
+            vs expected pattern
+        captureLoopbackHasError()
+          -> Sticky error flag
+          -> Surfaces to UI via
+            g_loopback_error[96]`"]
     end
 
-    PIN18["GPIO 18<br/><i>PIN_CAPTURE_IN</i>"] --> EDGE
+    PIN18["`**GPIO 18**
+    PIN_CAPTURE_IN`"] --> EDGE
     EDGE --> RECORDER
-    RECORDER -->|"PatternRef"| PLIB["PatternLibrary::<br/>registerUserPattern()"]
-    LOOPBACK -.->|"g_loopback_error"| LVGL_POLL["LVGL Timer<br/>(polled for display)"]
+    RECORDER -->|"PatternRef"| PLIB["`**PatternLibrary::**
+    registerUserPattern()`"]
+    LOOPBACK -.->|"g_loopback_error"| LVGL_POLL["`**LVGL Timer**
+    (polled for display)`"]
 
     style CAPTURE fill:#141C2E,stroke:#00E5FF,stroke-width:2px,color:#D7E9FF
 ```
@@ -496,48 +787,78 @@ This shows which source file depends on which, revealing the layered architectur
 ```mermaid
 flowchart TB
     subgraph MAIN["src/main.cpp — Integration Point"]
-        MAIN_FILE["<b>main.cpp</b><br/><i>setup() + loop() + managerTask()</i><br/><i>Wires all modules together</i><br/><i>Owns gCtrlQ, gGenInstance,</i><br/><i>gActivePattern, gCfg</i>"]
+        MAIN_FILE["`**main.cpp**
+        setup() + loop() + managerTask()
+        Wires all modules together
+        Owns gCtrlQ, gGenInstance,
+        gActivePattern, gCfg`"]
     end
 
     subgraph GEN["lib/ckp_gen/ — Signal Generation"]
-        PREF["PatternRef.h<br/><i>Universal pattern handle</i>"]
-        IGEN["CkpGenerator.h/.cpp<br/><i>IGenerator interface +</i><br/><i>TimerCkpGenerator</i>"]
-        TGEN["TableCkpGenerator.h/.cpp<br/><i>GPTimer + dedic_gpio</i><br/><i>byte-table playback</i>"]
+        PREF["`**PatternRef.h**
+        Universal pattern handle`"]
+        IGEN["`**CkpGenerator.h/.cpp**
+        IGenerator interface +
+        TimerCkpGenerator`"]
+        TGEN["`**TableCkpGenerator.h/.cpp**
+        GPTimer + dedic_gpio
+        byte-table playback`"]
     end
 
     subgraph PAT["lib/patterns/ — Pattern Registry"]
-        PLIB_SRC["PatternLibrary.h/.cpp<br/><i>3-tier registry</i>"]
-        BUILTIN_GEN["builtin_tables_generated.h<br/><i>~127KB .rodata tables</i>"]
-        NAMES_GEN["pattern_names_generated.h<br/><i>Friendly display names</i>"]
-        LEGACY_GEN["pattern_legacy_index_generated.h<br/><i>Ardu-Stim index migration</i>"]
+        PLIB_SRC["`**PatternLibrary.h/.cpp**
+        3-tier registry`"]
+        BUILTIN_GEN["`**builtin_tables_generated.h**
+        ~127KB .rodata tables`"]
+        NAMES_GEN["`**pattern_names_generated.h**
+        Friendly display names`"]
+        LEGACY_GEN["`**pattern_legacy_index_generated.h**
+        Ardu-Stim index migration`"]
     end
 
     subgraph DSL["lib/dsl/ — DSL Compiler"]
-        DSL_H["Dsl.h<br/><i>Public API</i>"]
-        LEXER["Lexer.h/.cpp<br/><i>Tokenizer</i>"]
-        PARSER["Parser.h/.cpp<br/><i>Recursive descent</i>"]
-        COMPILER["Compiler.h/.cpp<br/><i>AST → byte table</i>"]
-        VALIDATOR["Validator.h/.cpp<br/><i>12 semantic rules</i>"]
+        DSL_H["`**Dsl.h**
+        Public API`"]
+        LEXER["`**Lexer.h/.cpp**
+        Tokenizer`"]
+        PARSER["`**Parser.h/.cpp**
+        Recursive descent`"]
+        COMPILER["`**Compiler.h/.cpp**
+        AST -> byte table`"]
+        VALIDATOR["`**Validator.h/.cpp**
+        12 semantic rules`"]
     end
 
     subgraph STORE["lib/sweep_compression/ — Storage & Simulation"]
-        NVS_SRC["NvsStore.h/.cpp<br/><i>ESP32 NVS persistence</i>"]
-        PSTOR["PatternStorage.h/.cpp<br/><i>LittleFS DSL + cache</i>"]
-        SWEEP_SRC["SweepCompression.h/.cpp<br/><i>FreeRTOS sweep/comp task</i>"]
-        CTABLES["CompressionTables.h<br/><i>Sin LUTs (90/120/180)</i>"]
-        LFS["LittleFSInit.h/.cpp<br/><i>Mount + smoke test</i>"]
+        NVS_SRC["`**NvsStore.h/.cpp**
+        ESP32 NVS persistence`"]
+        PSTOR["`**PatternStorage.h/.cpp**
+        LittleFS DSL + cache`"]
+        SWEEP_SRC["`**SweepCompression.h/.cpp**
+        FreeRTOS sweep/comp task`"]
+        CTABLES["`**CompressionTables.h**
+        Sin LUTs (90/120/180)`"]
+        LFS["`**LittleFSInit.h/.cpp**
+        Mount + smoke test`"]
     end
 
     subgraph UI["lib/ui_lvgl/ — User Interface & I/O"]
-        UI_SRC["ui_lvgl.h/.cpp<br/><i>2847-line LVGL UI</i><br/><i>Tabs, overlays, events</i>"]
-        CTRL["ctrl_msg.h<br/><i>CtrlMsg / MsgType / MsgPayload</i>"]
-        CLI_SRC["serial_cli.h/.cpp<br/><i>Dual-mode serial protocol</i>"]
-        DSL_HELP["dsl_help.h<br/><i>ASCII grammar reference</i>"]
+        UI_SRC["`**ui_lvgl.h/.cpp**
+        2847-line LVGL UI
+        Tabs, overlays, events`"]
+        CTRL["`**ctrl_msg.h**
+        CtrlMsg / MsgType / MsgPayload`"]
+        CLI_SRC["`**serial_cli.h/.cpp**
+        Dual-mode serial protocol`"]
+        DSL_HELP["`**dsl_help.h**
+        ASCII grammar reference`"]
     end
 
     subgraph CAP["lib/ckp_capture/ — Signal Capture"]
-        EDGE_SRC["EdgePulseCapture.h/.cpp<br/><i>ISR edge timing</i>"]
-        REC_SRC["CaptureRecorder.h/.cpp<br/><i>Multi-rev capture + loopback</i>"]
+        EDGE_SRC["`**EdgePulseCapture.h/.cpp**
+        ISR edge timing`"]
+        REC_SRC["`**CaptureRecorder.h/.cpp**
+        Multi-rev capture + loopback`"]
     end
 
     %% Main dependencies
@@ -598,12 +919,33 @@ The firmware supports two hardware targets via build flags. This controls which 
 flowchart TB
     subgraph FLAGS["Build Flags (platformio.ini)"]
         direction LR
-        S3["<b>esp32-s3-n4r8 (Production)</b><br/>─────────────────────<br/>SIGGEN_BACKEND_TABLE=1<br/>SIGGEN_HAS_DISPLAY=1<br/>SIGGEN_USE_LITTLEFS=1<br/>BOARD_HAS_PSRAM<br/>─────────────────────<br/>• TableCkpGenerator<br/>• Full LVGL UI (2847 lines)<br/>• LittleFS pattern persistence<br/>• PSRAM for DSL tables<br/>• 3-channel GPIO bundle"]
-        WROOM["<b>esp32-wroom32d (Legacy)</b><br/><i>(currently commented out)</i><br/>─────────────────────<br/>(flags unset)<br/>─────────────────────<br/>• TimerCkpGenerator<br/>• No display (no-op stubs)<br/>• No LittleFS<br/>• No PSRAM<br/>• Single crank pin only<br/>• Serial CLI only"]
+        S3["`**esp32-s3-n4r8 (Production)**
+        ---------------------
+        SIGGEN_BACKEND_TABLE=1
+        SIGGEN_HAS_DISPLAY=1
+        SIGGEN_USE_LITTLEFS=1
+        BOARD_HAS_PSRAM
+        ---------------------
+        - TableCkpGenerator
+        - Full LVGL UI (2847 lines)
+        - LittleFS pattern persistence
+        - PSRAM for DSL tables
+        - 3-channel GPIO bundle`"]
+        WROOM["`**esp32-wroom32d (Legacy)**
+        (currently commented out)
+        ---------------------
+        (flags unset)
+        ---------------------
+        - TimerCkpGenerator
+        - No display (no-op stubs)
+        - No LittleFS
+        - No PSRAM
+        - Single crank pin only
+        - Serial CLI only`"]
     end
 
-    S3 -->|"compiles"| FULL["Full Feature Set<br/>TableCkpGenerator + LVGL + DSL + Sweep + Capture"]
-    WROOM -->|"compiles"| MINIMAL["Minimal Feature Set<br/>TimerCkpGenerator + Serial CLI<br/>Legacy 5-preset SignalConfig path"]
+    S3 -->|"compiles"| FULL["Full Feature Set\nTableCkpGenerator + LVGL + DSL + Sweep + Capture"]
+    WROOM -->|"compiles"| MINIMAL["Minimal Feature Set\nTimerCkpGenerator + Serial CLI\nLegacy 5-preset SignalConfig path"]
 
     style FLAGS fill:#0B1020,stroke:#00E5FF,stroke-width:2px,color:#D7E9FF
     style S3 fill:#1a3a1a,stroke:#66FF66,stroke-width:2px,color:#D7E9FF
